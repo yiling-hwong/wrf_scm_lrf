@@ -25,6 +25,7 @@ WRFV3/inc/wrf_status_codes.h
 WRFV3/run/namelist.input
 WRFV3/run/namelist.input.backup.2018-11-13_09_47_47
 WRFV3/run/namelist.input.backup.2018-11-13_10_05_36
+WRFV3/test/
 WRFV3/test/em_real/README.namelist
 WRFV3/test/em_real/p3_lookup_table_1.dat-v2.8.2
 WRFV3/test/em_real/p3_lookup_table_2.dat-v2.8.2

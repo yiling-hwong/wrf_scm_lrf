@@ -11,9 +11,9 @@ debug=""
 opt=""
 chem=""
 help_text=0
-compile_case=em_real
-architecture=79
-nest=1
+compile_case=em_scm_xy
+architecture=13
+nest=0
 clean=0
 test=""
 
@@ -168,15 +168,15 @@ echo Submitting the compilation to the express queue. Allow for about 40min to f
 #cat <<EOF_compile
 qsub $test -N compile_job <<EOF_compile
 #!/bin/bash
-#PBS -l walltime=1:30:00
-#PBS -l mem=5GB
-#PBS -l ncpus=$NPROC
+#PBS -l walltime=1:00:00
+#PBS -l mem=16GB
+#PBS -l ncpus=10
 #PBS -j oe
 #PBS -q $QUEUE
 #PBS -l wd
 #PBS -W umask=0022
 #PBS -l software=intel-compiler
-#PBS -l storage=gdata/$PROJECT+scratch/$PROJECT
+#PBS -l storage=gdata/w42+scratch/w42
 
 # Set the value of compile_case
 compile_case=${compile_case}

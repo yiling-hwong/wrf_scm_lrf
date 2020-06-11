@@ -204,6 +204,7 @@ CONTAINS
 
    USE module_ra_aerosol    , ONLY : calc_aerosol_goddard_sw, &
                                      calc_aerosol_rrtmg_sw
+   !USE module_common_variables_ylh, ONLY : print_all_details ! YLH
 
    !  This driver calls subroutines for the radiation parameterizations.
    !
@@ -849,6 +850,11 @@ CONTAINS
 
 !  If we set run_param to TRUE and this is adaptive time stepping, we set the time to the next
 !  radiation run.
+
+   !if ( print_all_details .eqv. .TRUE. ) then ! YLH
+   !   print *, ""
+   !   print *, "We are entering the module_radiation_driver.F (TOP)"
+   !endif
 
    run_param = .FALSE.
    decided = .FALSE.
@@ -2163,13 +2169,24 @@ CONTAINS
                      swdownc=swdownc, swddnic=swddnic, swddirc=swddirc, & ! PAJ
                      xcoszen=coszen,julian=julian,mp_physics=mp_physics ) ! jararias 2013/08/14
 
-             DO j=jts,jte
-             DO k=kts,kte
-             DO i=its,ite
-                RTHRATEN(I,K,J)=RTHRATEN(I,K,J)+RTHRATENSW(I,K,J)
-             ENDDO
-             ENDDO
-             ENDDO
+             !DO j=jts,jte
+             !DO k=kts,kte
+             !DO i=its,ite
+             !   !RTHRATEN(I,K,J)=RTHRATEN(I,K,J)+RTHRATENSW(I,K,J)
+
+             !   ! YLH(LRF) radiative cooling profile
+
+             !   if (k .le. 68) then             
+             !       RTHRATEN(I,K,J) = -1.5/86400
+             !   else if (k .ge. 77) then
+             !       RTHRATEN(I,K,J) = 0.0
+             !   else 
+             !       RTHRATEN(I,K,J) = -((1.5*P(I,K,J)/10000 - 1.5) / 86400)   
+             !   endif
+
+             !ENDDO
+             !ENDDO
+             !ENDDO
 
         CASE (RRTMK_SWSCHEME)
   
@@ -2584,6 +2601,7 @@ CONTAINS
 
 ! compute cloud diagnosis (random overlapping)
 ! by ZCX
+! YLH(LRF) COMMENT the following to disable interactive cloud
  IF ( PRESENT ( CLDFRA ) .AND. PRESENT ( CLDT ) .AND.        &
       PRESENT ( F_QC ) .AND. PRESENT ( F_QI ) ) THEN
 
@@ -2798,6 +2816,9 @@ CONTAINS
                        DEGRAD,DPD                                    )
 !---------------------------------------------------------------------
    USE module_wrf_error
+   USE parrrsw, ONLY : rrsw_scon ! YLH
+   !USE module_common_variables_ylh, ONLY : print_all_details ! YLH
+
    IMPLICIT NONE
 !---------------------------------------------------------------------
 
@@ -2806,6 +2827,9 @@ CONTAINS
    REAL, INTENT(OUT  )      ::       DECLIN,SOLCON
    REAL                     ::       OBECL,SINOB,SXLONG,ARG,  &
                                      DECDEG,DJUL,RJUL,ECCFAC
+
+   REAL                     ::       pi ! YLH
+
 !
 ! !DESCRIPTION:
 ! Compute terms used in radiation physics 
@@ -2835,7 +2859,15 @@ CONTAINS
    ECCFAC=1.000110+0.034221*COS(RJUL)+0.001280*SIN(RJUL)+0.000719*  &
           COS(2*RJUL)+0.000077*SIN(2*RJUL)
    SOLCON=1370.*ECCFAC
-   
+
+   pi = 4.*atan(1.) ! YLH
+   SOLCON = rrsw_scon * 1.0 / (pi*0.8) !YLH   
+
+   !if (print_all_details .eqv. .TRUE. ) then
+   !    print *, "SOLCON is computed in module_radiation_driver.F &
+   !    and is ", SOLCON
+   !endif
+
    END SUBROUTINE radconst
 
 
@@ -2843,6 +2875,9 @@ CONTAINS
                           julian,xtime,gmt, &
                           declin,degrad,xlon,xlat,coszen,hrang)
        ! Added Equation of Time correction : jararias, 2013/08/10
+
+       !USE module_common_variables_ylh, ONLY : print_all_details ! YLH
+
        implicit none
        integer, intent(in) :: ims,ime,jms,jme,its,ite,jts,jte
        real, intent(in)    :: julian,declin,xtime,gmt,degrad
@@ -2865,6 +2900,15 @@ CONTAINS
                         +cos(xxlat)*cos(declin) *cos(hrang(i,j))
           enddo
        enddo
+
+       coszen = 0.8 ! YLH (Maxime's change to have constant solar cst)
+
+       !if ( print_all_details .eqv. .TRUE. ) then
+       !   print *, "COSZEN is computed in module_radiatio_driver.F &
+       !   and COSZEN(its,jts) is: ", coszen(its,jts)
+       !endif
+
+
    END SUBROUTINE calc_coszen
 
    subroutine update_swinterp_parameters(ims,ime,jms,jme,its,ite,jts,jte, &

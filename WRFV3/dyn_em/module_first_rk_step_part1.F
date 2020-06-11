@@ -46,7 +46,11 @@ CONTAINS
     USE module_fr_fire_driver_wrf, ONLY : fire_driver_em_step
     USE module_fddagd_driver, ONLY : fddagd_driver
     USE module_em, ONLY : init_zero_tendency
-    USE module_force_scm
+    USE module_force_scm, ONLY: force_scm_LRF ! YLH - LRF
+    USE module_force_surface_winds, ONLY: force_scm_surface_winds ! YLH - LRF
+    USE module_relax_winds, ONLY: scm_relax_winds ! YLH - LRF
+    USE module_relax_winds_shear, ONLY: scm_relax_winds_shear ! YLH - LRF
+    !USE module_scm_prescribe_rad, ONLY: prescribe_rad ! YLH - prescribe rad
     USE module_convtrans_prep
     USE module_big_step_utilities_em, ONLY : phy_prep
 !use module_scalar_tables
@@ -142,7 +146,11 @@ CONTAINS
                                       sips , sipe , sjps , sjpe , skps , skpe
 
    CHARACTER (LEN=256) :: mminlu
-   CHARACTER (LEN=1000) :: message
+   CHARACTER (LEN=1000) :: message ! YLH
+   INTEGER  :: k ! YLH
+   INTEGER  :: its,ite,jts,jte ! YLH
+   REAL     :: t_tend ! YLH
+
 
 #if ( WRF_DFI_RADAR == 1 )
     INTEGER  do_capsupress   ! =1 do CAP supress, other = don't
@@ -212,9 +220,12 @@ BENCH_END(init_zero_tend_tim)
       ENDDO
       !$OMP END PARALLEL DO
 
+
+
 BENCH_END(phy_prep_tim)
 
 ! radiation
+
      CALL domain_clock_get( grid, current_time=currentTime, &
                             current_timestr=mesg )
      CALL WRFU_TimeGet( currentTime, YY=yr, dayOfYear=day, H=hr, M=minute, S=sec, rc=rc)
@@ -222,192 +233,254 @@ BENCH_END(phy_prep_tim)
          CALL wrf_error_fatal('WRFU_TimeGet failed')
          ENDIF
 
-! this driver is only needed to handle non-local shadowing effects
-      CALL pre_radiation_driver ( grid, config_flags                        &
-     &        ,itimestep=grid%itimestep, ra_call_offset=grid%ra_call_offset    &
-     &        ,XLAT=grid%xlat, XLONG=grid%xlong, GMT=grid%gmt                  &
-     &        ,julian=grid%julian, xtime=grid%xtime, RADT=grid%radt            &
-     &        ,STEPRA=grid%stepra                                              &
-     &        ,ht=grid%ht,dx=grid%dx,dy=grid%dy,sina=grid%sina,cosa=grid%cosa  &
-     &        ,shadowmask=grid%shadowmask,slope_rad=config_flags%slope_rad     &
-     &        ,topo_shading=config_flags%topo_shading                          &
-     &        ,shadlen=config_flags%shadlen,ht_shad=grid%ht_shad,ht_loc=ht_loc &
-     &        ,ht_shad_bxs=grid%ht_shad_bxs, ht_shad_bxe=grid%ht_shad_bxe      &
-     &        ,ht_shad_bys=grid%ht_shad_bys, ht_shad_bye=grid%ht_shad_bye      &
-     &        ,nested=config_flags%nested, min_ptchsz=grid%min_ptchsz          &
-     &        ,spec_bdy_width=config_flags%spec_bdy_width                      &
-            ! indexes
-     &        ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde          &
-     &        ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme          &
-     &        ,IPS=ips,IPE=ipe, JPS=jps,JPE=jpe, KPS=kps,KPE=kpe          &
-     &        ,i_start=grid%i_start,i_end=min(grid%i_end, ide-1)          &
-     &        ,j_start=grid%j_start,j_end=min(grid%j_end, jde-1)          &
-     &        ,kts=k_start, kte=min(k_end,kde-1)                          &
-     &        ,num_tiles=grid%num_tiles                                   )
 
-      CALL wrf_debug ( 200 , ' call radiation_driver' )
-BENCH_START(rad_driver_tim)
+!****************** YLH only call radiation driver if fix_rad flag is not set ******************!
 
-      CALL radiation_driver(                                                  &
-     &         p_top=grid%p_top & !DJW 140312 added p_top for vertical nesting
-     &        ,ACFRCV=grid%acfrcv      ,ACFRST=grid%acfrst      ,ALBEDO=grid%albedo  &
-     &        ,CFRACH=grid%cfrach      ,CFRACL=grid%cfracl      ,CFRACM=grid%cfracm  &
-     &        ,CUPPT=grid%cuppt        ,CZMEAN=grid%czmean      ,DT=grid%dt          &
-     &        ,DZ8W=dz8w               ,EMISS=grid%emiss        ,GLW=grid%glw        &
-     &        ,GMT=grid%gmt            ,GSW=grid%gsw            ,HBOT=grid%hbot      &
-     &        ,HTOP=grid%htop          ,HBOTR=grid%hbotr        ,HTOPR=grid%htopr    &
-     &        ,ICLOUD=config_flags%icloud                                            &
-     &        ,ITIMESTEP=grid%itimestep,JULDAY=grid%julday      , JULIAN=grid%julian &
-     &        ,JULYR=grid%julyr        ,LW_PHYSICS=config_flags%ra_lw_physics        &
-     &        ,NCFRCV=grid%ncfrcv      ,NCFRST=grid%ncfrst      ,NPHS=1              &
-     &        ,o3input=config_flags%o3input     ,O3rad=grid%o3rad                    &
-     &        ,aer_opt=config_flags%aer_opt ,aerod=aerod(:,:,:,P_ocarbon:P_upperaer) &
-     &        ,swint_opt=config_flags%swint_opt                                      &
-     &        ,P8W=grid%p_hyd_w        ,P=grid%p_hyd            ,PI=pi_phy           &
-     &        ,RADT=grid%radt          ,RA_CALL_OFFSET=grid%ra_call_offset           &
-     &        ,RHO=grid%rho            ,RLWTOA=grid%rlwtoa                           &
-     &        ,RSWTOA=grid%rswtoa      ,RTHRATEN=grid%rthraten                       &
-     &        ,RTHRATENLW=grid%rthratenlw       ,RTHRATENSW=grid%rthratensw          &
-     &        ,SNOW=grid%snow          ,STEPRA=grid%stepra      ,SWDOWN=grid%swdown  &
-     &        ,SWDOWNC=grid%swdownc    ,SW_PHYSICS=config_flags%ra_sw_physics        &
-     &        ,T8W=t8w                 ,T=grid%t_phy           ,TAUCLDC=grid%taucldc &
-     &        ,TAUCLDI=grid%taucldi    ,TSK=grid%tsk            ,VEGFRA=grid%vegfra  &
-     &        ,WARM_RAIN=grid%warm_rain ,XICE=grid%xice         ,XLAND=grid%xland    &
-     &        ,XLAT=grid%xlat          ,XLONG=grid%xlong        ,YR=yr               &
-           ! SSiB LSM radiation components (fds 06/2010)
-     &        ,ALSWVISDIR=grid%alswvisdir ,ALSWVISDIF=grid%alswvisdif      &  !ssib 
-     &        ,ALSWNIRDIR=grid%alswnirdir ,ALSWNIRDIF=grid%alswnirdif      &  !ssib
-     &        ,SWVISDIR=grid%swvisdir ,SWVISDIF=grid%swvisdif              &  !ssib
-     &        ,SWNIRDIR=grid%swnirdir ,SWNIRDIF=grid%swnirdif              &  !ssib
-     &        ,SF_SURFACE_PHYSICS=config_flags%sf_surface_physics          &  !ssib
-! WRF-solar and aerosol variables from jararias 2013/8 and 2013/11
-     &       ,SWDDIR=grid%swddir,SWDDNI=grid%swddni,SWDDIF=grid%swddif                              & 
-     &       ,SWDDIRC=grid%swddirc, SWDDNIC=grid%swddnic                                            &
-     &       ,Gx=grid%Gx,Bx=grid%Bx,gg=grid%gg,bb=grid%bb                                           &
-     &       ,swdown_ref=grid%swdown_ref,swddir_ref=grid%swddir_ref                                 &
-     &       ,coszen_ref=grid%coszen_ref                                                            &
-     &       ,aer_type=config_flags%aer_type                                                        &
-     &       ,aer_aod550_opt=config_flags%aer_aod550_opt,aer_aod550_val=config_flags%aer_aod550_val &
-     &       ,aer_angexp_opt=config_flags%aer_angexp_opt,aer_angexp_val=config_flags%aer_angexp_val &
-     &       ,aer_ssa_opt=config_flags%aer_ssa_opt,aer_ssa_val=config_flags%aer_ssa_val             &
-     &       ,aer_asy_opt=config_flags%aer_asy_opt,aer_asy_val=config_flags%aer_asy_val             &
-     &       ,aod5502d=grid%aod5502d,angexp2d=grid%angexp2d,aerssa2d=grid%aerssa2d                  &
-     &       ,aerasy2d=grid%aerasy2d,aod5503d=grid%aod5503d                                         &
-     &       ,taod5502d=grid%taod5502d,taod5503d=grid%taod5503d                                     & ! Trude
-!Optional solar variables
-     &        ,DECLINX=grid%declin ,SOLCONX=grid%solcon ,COSZEN=grid%coszen ,HRANG=grid%hrang    &
-     &        , CEN_LAT=grid%cen_lat                                      &
-     &        ,Z=grid%z                                                   &
-     &        ,ALEVSIZ=grid%alevsiz, no_src_types=grid%no_src_types       &
-     &        ,LEVSIZ=grid%levsiz, N_OZMIXM=num_ozmixm                    &
-     &        ,N_AEROSOLC=num_aerosolc                                    &
-     &        ,PAERLEV=grid%paerlev   ,ID=grid%id                         &
-     &        ,CAM_ABS_DIM1=grid%cam_abs_dim1, CAM_ABS_DIM2=grid%cam_abs_dim2 &
-     &        ,CAM_ABS_FREQ_S=grid%cam_abs_freq_s                         &
-     &        ,XTIME=grid%xtime                                                &
-              ,CURR_SECS=curr_secs, ADAPT_STEP_FLAG=adapt_step_flag       &
-!BSINGH - For WRFCuP scheme
-     &        ,CU_PHYSICS=config_flags%cu_physics                         & !CuP, wig 5-Oct-2006
-     &        ,SHALLOWCU_FORCED_RA=config_flags%shallowcu_forced_ra       & !CuP, wig
-     &        ,CUBOT=grid%cubot, CUTOP=grid%cutop                         & !CuP, wig 9-Oct-2006
-     &        ,CLDFRA_CUP=grid%cldfra_cup                                 & !CuP, wig 1-Oct-2006
-     &        ,SHALL=grid%shall                                           & !CuP, wig 4-Feb-2008
-!BSINGH - ENDS
-            ! indexes
-     &        ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde          &
-     &        ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme          &
-     &        ,i_start=grid%i_start,i_end=min(grid%i_end, ide-1)          &
-     &        ,j_start=grid%j_start,j_end=min(grid%j_end, jde-1)          &
-     &        ,kts=k_start, kte=min(k_end,kde-1)                          &
-     &        ,num_tiles=grid%num_tiles                                   &
-            ! Optional
-!JJS 20101020 vvvvv
-     &        , TLWDN=grid%tlwdn, TLWUP=grid%tlwup                        & ! goddard schemes
-     &        , SLWDN=grid%slwdn, SLWUP=grid%slwup                        & ! goddard schemes
-     &        , TSWDN=grid%tswdn, TSWUP=grid%tswup                        & ! goddard schemes
-     &        , SSWDN=grid%sswdn, SSWUP=grid%sswup                        & ! goddard schemes
-!JJS 20101020 ^^^^^
-!ZCX+ cloud fraction for CLWRF
-     &        , CLDT=grid%cldt, ZNU=grid%znu                              &
-!ZCX-
-     &        , CLDFRA=grid%cldfra, CLDFRA_MP_ALL=grid%cldfra_mp_all      &
-     &        , LRADIUS=grid%LRADIUS,IRADIUS=grid%IRADIUS                 & !BSINGH(01/22/2014)
-     &        , CLDFRA_DP=grid%cldfra_dp                                  & ! ckay for subgrid cloud
-     &        , CLDFRA_SH=grid%cldfra_sh                                  &
-     &        , icloud_bl=config_flags%icloud_bl                          & !JOE: subgrid BL clouds
-     &        , qc_bl=grid%qc_bl,cldfra_bl=grid%cldfra_bl                 & !JOE: subgrid bl clouds
-     &        , re_cloud=grid%re_cloud, re_ice=grid%re_ice, re_snow=grid%re_snow & ! G. Thompson
-     &        , has_reqc=grid%has_reqc, has_reqi=grid%has_reqi, has_reqs=grid%has_reqs & ! G. Thompson
-     &        , PB=grid%pb                                                &
-     &        , F_ICE_PHY=grid%f_ice_phy,F_RAIN_PHY=grid%f_rain_phy       &
-     &        , F_QNC=F_QNC                                               &
-     &        , QNC_CURR=scalar(ims,kms,jms,P_QNC)                        &
-     &        , QV=moist(ims,kms,jms,P_QV), F_QV=F_QV                     &
-     &        , QC=moist(ims,kms,jms,P_QC), F_QC=F_QC                     &
-     &        , QR=moist(ims,kms,jms,P_QR), F_QR=F_QR                     &
-     &        , QI=moist(ims,kms,jms,P_QI), F_QI=F_QI                     &
-     &        , QI2=moist(ims,kms,jms,P_QI2), F_QI2=F_QI2                 & ! for P3
-     &        , QS=moist(ims,kms,jms,P_QS), F_QS=F_QS                     &
-     &        , QG=moist(ims,kms,jms,P_QG), F_QG=F_QG                     &
-     &        , QNDROP=scalar(ims,kms,jms,P_QNDROP), F_QNDROP=F_QNDROP    &
-     &        ,QNIFA=scalar(ims,kms,jms,P_QNIFA),F_QNIFA=F_QNIFA          & !Trude
-     &        ,QNWFA=scalar(ims,kms,jms,P_QNWFA),F_QNWFA=F_QNWFA          & !Trude
-     &        ,ACSWUPT=grid%acswupt    ,ACSWUPTC=grid%acswuptc            &
-     &        ,ACSWDNT=grid%acswdnt    ,ACSWDNTC=grid%acswdntc            &
-     &        ,ACSWUPB=grid%acswupb    ,ACSWUPBC=grid%acswupbc            &
-     &        ,ACSWDNB=grid%acswdnb    ,ACSWDNBC=grid%acswdnbc            &
-     &        ,ACLWUPT=grid%aclwupt    ,ACLWUPTC=grid%aclwuptc            &
-     &        ,ACLWDNT=grid%aclwdnt    ,ACLWDNTC=grid%aclwdntc            &
-     &        ,ACLWUPB=grid%aclwupb    ,ACLWUPBC=grid%aclwupbc            &
-     &        ,ACLWDNB=grid%aclwdnb    ,ACLWDNBC=grid%aclwdnbc            &
-     &        ,SWUPT=grid%swupt,SWUPTC=grid%swuptc,SWUPTCLN=grid%swuptcln &
-     &        ,SWDNT=grid%swdnt,SWDNTC=grid%swdntc,SWDNTCLN=grid%swdntcln &
-     &        ,SWUPB=grid%swupb,SWUPBC=grid%swupbc,SWUPBCLN=grid%swupbcln &
-     &        ,SWDNB=grid%swdnb,SWDNBC=grid%swdnbc,SWDNBCLN=grid%swdnbcln &
-     &        ,LWUPT=grid%lwupt,LWUPTC=grid%lwuptc,LWUPTCLN=grid%lwuptcln &
-     &        ,LWDNT=grid%lwdnt,LWDNTC=grid%lwdntc,LWDNTCLN=grid%lwdntcln &
-     &        ,LWUPB=grid%lwupb,LWUPBC=grid%lwupbc,LWUPBCLN=grid%lwupbcln &
-     &        ,LWDNB=grid%lwdnb,LWDNBC=grid%lwdnbc,LWDNBCLN=grid%lwdnbcln &
-     &        ,LWCF=grid%lwcf                                                  &
-     &        ,SWCF=grid%swcf                                                  &
-     &        ,OLR=grid%olr                                                    &
-     &        ,AERODM=grid%aerodm, PINA=grid%pina, AODTOT=grid%aodtot          &
-     &        ,OZMIXM=grid%ozmixm, PIN=grid%pin                                &
-     &        ,M_PS_1=grid%m_ps_1, M_PS_2=grid%m_ps_2, AEROSOLC_1=grid%aerosolc_1        &
-     &        ,AEROSOLC_2=grid%aerosolc_2, M_HYBI0=grid%m_hybi                      &
-     &        ,ABSTOT=grid%abstot, ABSNXT=grid%absnxt, EMSTOT=grid%emstot                &
-     &        ,RADTACTTIME=grid%radtacttime                                         &  
-     &        ,ICLOUD_CU=config_flags%ICLOUD_CU                            &
-     &        ,QC_CU=grid%QC_CU , QI_CU=grid%QI_CU                         &
-     &        ,CALC_CLEAN_ATM_DIAG=config_flags%calc_clean_atm_diag                  &
+     if (config_flags%ideal_fix_rad_flag .eq. 0) then
+
+          CALL wrf_debug ( 50 , ' INTERACTIVE radiation ' )
+
+          ! this driver is only needed to handle non-local shadowing effects
+           CALL pre_radiation_driver ( grid, config_flags                        &
+          &        ,itimestep=grid%itimestep, ra_call_offset=grid%ra_call_offset    &
+          &        ,XLAT=grid%xlat, XLONG=grid%xlong, GMT=grid%gmt                  &
+          &        ,julian=grid%julian, xtime=grid%xtime, RADT=grid%radt            &
+          &        ,STEPRA=grid%stepra                                              &
+          &        ,ht=grid%ht,dx=grid%dx,dy=grid%dy,sina=grid%sina,cosa=grid%cosa  &
+          &        ,shadowmask=grid%shadowmask,slope_rad=config_flags%slope_rad     &
+          &        ,topo_shading=config_flags%topo_shading                          &
+          &        ,shadlen=config_flags%shadlen,ht_shad=grid%ht_shad,ht_loc=ht_loc &
+          &        ,ht_shad_bxs=grid%ht_shad_bxs, ht_shad_bxe=grid%ht_shad_bxe      &
+          &        ,ht_shad_bys=grid%ht_shad_bys, ht_shad_bye=grid%ht_shad_bye      &
+          &        ,nested=config_flags%nested, min_ptchsz=grid%min_ptchsz          &
+          &        ,spec_bdy_width=config_flags%spec_bdy_width                      &
+                 ! indexes
+          &        ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde          &
+          &        ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme          &
+          &        ,IPS=ips,IPE=ipe, JPS=jps,JPE=jpe, KPS=kps,KPE=kpe          &
+          &        ,i_start=grid%i_start,i_end=min(grid%i_end, ide-1)          &
+          &        ,j_start=grid%j_start,j_end=min(grid%j_end, jde-1)          &
+          &        ,kts=k_start, kte=min(k_end,kde-1)                          &
+          &        ,num_tiles=grid%num_tiles                                   )
+     
+     
+     
+     
+         CALL wrf_debug ( 50 , ' call radiation_driver' ) ! YLH
+         BENCH_START(rad_driver_tim)
+     
+           CALL radiation_driver(                                                  &
+          &         p_top=grid%p_top & !DJW 140312 added p_top for vertical nesting
+          &        ,ACFRCV=grid%acfrcv      ,ACFRST=grid%acfrst      ,ALBEDO=grid%albedo  &
+          &        ,CFRACH=grid%cfrach      ,CFRACL=grid%cfracl      ,CFRACM=grid%cfracm  &
+          &        ,CUPPT=grid%cuppt        ,CZMEAN=grid%czmean      ,DT=grid%dt          &
+          &        ,DZ8W=dz8w               ,EMISS=grid%emiss        ,GLW=grid%glw        &
+          &        ,GMT=grid%gmt            ,GSW=grid%gsw            ,HBOT=grid%hbot      &
+          &        ,HTOP=grid%htop          ,HBOTR=grid%hbotr        ,HTOPR=grid%htopr    &
+          &        ,ICLOUD=config_flags%icloud                                            &
+          &        ,ITIMESTEP=grid%itimestep,JULDAY=grid%julday      , JULIAN=grid%julian &
+          &        ,JULYR=grid%julyr        ,LW_PHYSICS=config_flags%ra_lw_physics        &
+          &        ,NCFRCV=grid%ncfrcv      ,NCFRST=grid%ncfrst      ,NPHS=1              &
+          &        ,o3input=config_flags%o3input     ,O3rad=grid%o3rad                    &
+          &        ,aer_opt=config_flags%aer_opt ,aerod=aerod(:,:,:,P_ocarbon:P_upperaer) &
+          &        ,swint_opt=config_flags%swint_opt                                      &
+          &        ,P8W=grid%p_hyd_w        ,P=grid%p_hyd            ,PI=pi_phy           &
+          &        ,RADT=grid%radt          ,RA_CALL_OFFSET=grid%ra_call_offset           &
+          &        ,RHO=grid%rho            ,RLWTOA=grid%rlwtoa                           &
+          &        ,RSWTOA=grid%rswtoa      ,RTHRATEN=grid%rthraten                       &
+          &        ,RTHRATENLW=grid%rthratenlw       ,RTHRATENSW=grid%rthratensw          &
+          &        ,SNOW=grid%snow          ,STEPRA=grid%stepra      ,SWDOWN=grid%swdown  &
+          &        ,SWDOWNC=grid%swdownc    ,SW_PHYSICS=config_flags%ra_sw_physics        &
+          &        ,T8W=t8w                 ,T=grid%t_phy           ,TAUCLDC=grid%taucldc &
+          &        ,TAUCLDI=grid%taucldi    ,TSK=grid%tsk            ,VEGFRA=grid%vegfra  &
+          &        ,WARM_RAIN=grid%warm_rain ,XICE=grid%xice         ,XLAND=grid%xland    &
+          &        ,XLAT=grid%xlat          ,XLONG=grid%xlong        ,YR=yr               &
+                ! SSiB LSM radiation components (fds 06/2010)
+          &        ,ALSWVISDIR=grid%alswvisdir ,ALSWVISDIF=grid%alswvisdif      &  !ssib 
+          &        ,ALSWNIRDIR=grid%alswnirdir ,ALSWNIRDIF=grid%alswnirdif      &  !ssib
+          &        ,SWVISDIR=grid%swvisdir ,SWVISDIF=grid%swvisdif              &  !ssib
+          &        ,SWNIRDIR=grid%swnirdir ,SWNIRDIF=grid%swnirdif              &  !ssib
+          &        ,SF_SURFACE_PHYSICS=config_flags%sf_surface_physics          &  !ssib
+     ! WRF-solar and aerosol variables from jararias 2013/8 and 2013/11
+          &       ,SWDDIR=grid%swddir,SWDDNI=grid%swddni,SWDDIF=grid%swddif                              & 
+          &       ,SWDDIRC=grid%swddirc, SWDDNIC=grid%swddnic                                            &
+          &       ,Gx=grid%Gx,Bx=grid%Bx,gg=grid%gg,bb=grid%bb                                           &
+          &       ,swdown_ref=grid%swdown_ref,swddir_ref=grid%swddir_ref                                 &
+          &       ,coszen_ref=grid%coszen_ref                                                            &
+          &       ,aer_type=config_flags%aer_type                                                        &
+          &       ,aer_aod550_opt=config_flags%aer_aod550_opt,aer_aod550_val=config_flags%aer_aod550_val &
+          &       ,aer_angexp_opt=config_flags%aer_angexp_opt,aer_angexp_val=config_flags%aer_angexp_val &
+          &       ,aer_ssa_opt=config_flags%aer_ssa_opt,aer_ssa_val=config_flags%aer_ssa_val             &
+          &       ,aer_asy_opt=config_flags%aer_asy_opt,aer_asy_val=config_flags%aer_asy_val             &
+          &       ,aod5502d=grid%aod5502d,angexp2d=grid%angexp2d,aerssa2d=grid%aerssa2d                  &
+          &       ,aerasy2d=grid%aerasy2d,aod5503d=grid%aod5503d                                         &
+          &       ,taod5502d=grid%taod5502d,taod5503d=grid%taod5503d                                     & ! Trude
+     !Optional solar variables
+          &        ,DECLINX=grid%declin ,SOLCONX=grid%solcon ,COSZEN=grid%coszen ,HRANG=grid%hrang    &
+          &        , CEN_LAT=grid%cen_lat                                      &
+          &        ,Z=grid%z                                                   &
+          &        ,ALEVSIZ=grid%alevsiz, no_src_types=grid%no_src_types       &
+          &        ,LEVSIZ=grid%levsiz, N_OZMIXM=num_ozmixm                    &
+          &        ,N_AEROSOLC=num_aerosolc                                    &
+          &        ,PAERLEV=grid%paerlev   ,ID=grid%id                         &
+          &        ,CAM_ABS_DIM1=grid%cam_abs_dim1, CAM_ABS_DIM2=grid%cam_abs_dim2 &
+          &        ,CAM_ABS_FREQ_S=grid%cam_abs_freq_s                         &
+          &        ,XTIME=grid%xtime                                                &
+                   ,CURR_SECS=curr_secs, ADAPT_STEP_FLAG=adapt_step_flag       &
+     !BSINGH - For WRFCuP scheme
+          &        ,CU_PHYSICS=config_flags%cu_physics                         & !CuP, wig 5-Oct-2006
+          &        ,SHALLOWCU_FORCED_RA=config_flags%shallowcu_forced_ra       & !CuP, wig
+          &        ,CUBOT=grid%cubot, CUTOP=grid%cutop                         & !CuP, wig 9-Oct-2006
+          &        ,CLDFRA_CUP=grid%cldfra_cup                                 & !CuP, wig 1-Oct-2006
+          &        ,SHALL=grid%shall                                           & !CuP, wig 4-Feb-2008
+     !BSINGH - ENDS
+                 ! indexes
+          &        ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde          &
+          &        ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme          &
+          &        ,i_start=grid%i_start,i_end=min(grid%i_end, ide-1)          &
+          &        ,j_start=grid%j_start,j_end=min(grid%j_end, jde-1)          &
+          &        ,kts=k_start, kte=min(k_end,kde-1)                          &
+          &        ,num_tiles=grid%num_tiles                                   &
+                 ! Optional
+     !JJS 20101020 vvvvv
+          &        , TLWDN=grid%tlwdn, TLWUP=grid%tlwup                        & ! goddard schemes
+          &        , SLWDN=grid%slwdn, SLWUP=grid%slwup                        & ! goddard schemes
+          &        , TSWDN=grid%tswdn, TSWUP=grid%tswup                        & ! goddard schemes
+          &        , SSWDN=grid%sswdn, SSWUP=grid%sswup                        & ! goddard schemes
+     !JJS 20101020 ^^^^^
+     !ZCX+ cloud fraction for CLWRF
+          &        , CLDT=grid%cldt, ZNU=grid%znu                              &
+     !ZCX-
+          &        , CLDFRA=grid%cldfra, CLDFRA_MP_ALL=grid%cldfra_mp_all      &
+          &        , LRADIUS=grid%LRADIUS,IRADIUS=grid%IRADIUS                 & !BSINGH(01/22/2014)
+          &        , CLDFRA_DP=grid%cldfra_dp                                  & ! ckay for subgrid cloud
+          &        , CLDFRA_SH=grid%cldfra_sh                                  &
+          &        , icloud_bl=config_flags%icloud_bl                          & !JOE: subgrid BL clouds
+          &        , qc_bl=grid%qc_bl,cldfra_bl=grid%cldfra_bl                 & !JOE: subgrid bl clouds
+          &        , re_cloud=grid%re_cloud, re_ice=grid%re_ice, re_snow=grid%re_snow & ! G. Thompson
+          &        , has_reqc=grid%has_reqc, has_reqi=grid%has_reqi, has_reqs=grid%has_reqs & ! G. Thompson
+          &        , PB=grid%pb                                                &
+          &        , F_ICE_PHY=grid%f_ice_phy,F_RAIN_PHY=grid%f_rain_phy       &
+          &        , F_QNC=F_QNC                                               &
+          &        , QNC_CURR=scalar(ims,kms,jms,P_QNC)                        &
+          &        , QV=moist(ims,kms,jms,P_QV), F_QV=F_QV                     &
+          &        , QC=moist(ims,kms,jms,P_QC), F_QC=F_QC                     &
+          &        , QR=moist(ims,kms,jms,P_QR), F_QR=F_QR                     &
+          &        , QI=moist(ims,kms,jms,P_QI), F_QI=F_QI                     &
+          &        , QI2=moist(ims,kms,jms,P_QI2), F_QI2=F_QI2                 & ! for P3
+          &        , QS=moist(ims,kms,jms,P_QS), F_QS=F_QS                     &
+          &        , QG=moist(ims,kms,jms,P_QG), F_QG=F_QG                     &
+          &        , QNDROP=scalar(ims,kms,jms,P_QNDROP), F_QNDROP=F_QNDROP    &
+          &        ,QNIFA=scalar(ims,kms,jms,P_QNIFA),F_QNIFA=F_QNIFA          & !Trude
+          &        ,QNWFA=scalar(ims,kms,jms,P_QNWFA),F_QNWFA=F_QNWFA          & !Trude
+          &        ,ACSWUPT=grid%acswupt    ,ACSWUPTC=grid%acswuptc            &
+          &        ,ACSWDNT=grid%acswdnt    ,ACSWDNTC=grid%acswdntc            &
+          &        ,ACSWUPB=grid%acswupb    ,ACSWUPBC=grid%acswupbc            &
+          &        ,ACSWDNB=grid%acswdnb    ,ACSWDNBC=grid%acswdnbc            &
+          &        ,ACLWUPT=grid%aclwupt    ,ACLWUPTC=grid%aclwuptc            &
+          &        ,ACLWDNT=grid%aclwdnt    ,ACLWDNTC=grid%aclwdntc            &
+          &        ,ACLWUPB=grid%aclwupb    ,ACLWUPBC=grid%aclwupbc            &
+          &        ,ACLWDNB=grid%aclwdnb    ,ACLWDNBC=grid%aclwdnbc            &
+          &        ,SWUPT=grid%swupt,SWUPTC=grid%swuptc,SWUPTCLN=grid%swuptcln &
+          &        ,SWDNT=grid%swdnt,SWDNTC=grid%swdntc,SWDNTCLN=grid%swdntcln &
+          &        ,SWUPB=grid%swupb,SWUPBC=grid%swupbc,SWUPBCLN=grid%swupbcln &
+          &        ,SWDNB=grid%swdnb,SWDNBC=grid%swdnbc,SWDNBCLN=grid%swdnbcln &
+          &        ,LWUPT=grid%lwupt,LWUPTC=grid%lwuptc,LWUPTCLN=grid%lwuptcln &
+          &        ,LWDNT=grid%lwdnt,LWDNTC=grid%lwdntc,LWDNTCLN=grid%lwdntcln &
+          &        ,LWUPB=grid%lwupb,LWUPBC=grid%lwupbc,LWUPBCLN=grid%lwupbcln &
+          &        ,LWDNB=grid%lwdnb,LWDNBC=grid%lwdnbc,LWDNBCLN=grid%lwdnbcln &
+          &        ,LWCF=grid%lwcf                                                  &
+          &        ,SWCF=grid%swcf                                                  &
+          &        ,OLR=grid%olr                                                    &
+          &        ,AERODM=grid%aerodm, PINA=grid%pina, AODTOT=grid%aodtot          &
+          &        ,OZMIXM=grid%ozmixm, PIN=grid%pin                                &
+          &        ,M_PS_1=grid%m_ps_1, M_PS_2=grid%m_ps_2, AEROSOLC_1=grid%aerosolc_1        &
+          &        ,AEROSOLC_2=grid%aerosolc_2, M_HYBI0=grid%m_hybi                      &
+          &        ,ABSTOT=grid%abstot, ABSNXT=grid%absnxt, EMSTOT=grid%emstot                &
+          &        ,RADTACTTIME=grid%radtacttime                                         &  
+          &        ,ICLOUD_CU=config_flags%ICLOUD_CU                            &
+          &        ,QC_CU=grid%QC_CU , QI_CU=grid%QI_CU                         &
+          &        ,CALC_CLEAN_ATM_DIAG=config_flags%calc_clean_atm_diag        &
 #if (WRF_CHEM == 1)
-     &        ,AER_RA_FEEDBACK=config_flags%aer_ra_feedback                &
-     &        ,PM2_5_DRY=grid%pm2_5_dry, PM2_5_WATER=grid%pm2_5_water               &
-     &        ,PM2_5_DRY_EC=grid%pm2_5_dry_ec                                  &
-     &        ,TAUAER300=grid%tauaer1, TAUAER400=grid%tauaer2 & ! jcb
-     &        ,TAUAER600=grid%tauaer3, TAUAER999=grid%tauaer4 & ! jcb
-     &        ,GAER300=grid%gaer1, GAER400=grid%gaer2, GAER600=grid%gaer3, GAER999=grid%gaer4 & ! jcb
-     &        ,WAER300=grid%waer1, WAER400=grid%waer2, WAER600=grid%waer3, WAER999=grid%waer4 & ! jcb
-     &        ,TAUAERlw1  =grid%tauaerlw1,  TAUAERlw2=grid%tauaerlw2    & 
-     &        ,TAUAERlw3  =grid%tauaerlw3,  TAUAERlw4=grid%tauaerlw4    & 
-     &        ,TAUAERlw5  =grid%tauaerlw5,  TAUAERlw6=grid%tauaerlw6    & 
-     &        ,TAUAERlw7  =grid%tauaerlw7,  TAUAERlw8=grid%tauaerlw8    & 
-     &        ,TAUAERlw9  =grid%tauaerlw9,  TAUAERlw10=grid%tauaerlw10    & 
-     &        ,TAUAERlw11 =grid%tauaerlw11, TAUAERlw12=grid%tauaerlw12    & 
-     &        ,TAUAERlw13 =grid%tauaerlw13, TAUAERlw14=grid%tauaerlw14    & 
-     &        ,TAUAERlw15 =grid%tauaerlw15, TAUAERlw16=grid%tauaerlw16   & 
-     &        ,progn=config_flags%progn                                            &
+          &        ,AER_RA_FEEDBACK=config_flags%aer_ra_feedback                &
+          &        ,PM2_5_DRY=grid%pm2_5_dry, PM2_5_WATER=grid%pm2_5_water               &
+          &        ,PM2_5_DRY_EC=grid%pm2_5_dry_ec                                  &
+          &        ,TAUAER300=grid%tauaer1, TAUAER400=grid%tauaer2 & ! jcb
+          &        ,TAUAER600=grid%tauaer3, TAUAER999=grid%tauaer4 & ! jcb
+          &        ,GAER300=grid%gaer1, GAER400=grid%gaer2, GAER600=grid%gaer3, GAER999=grid%gaer4 & ! jcb
+          &        ,WAER300=grid%waer1, WAER400=grid%waer2, WAER600=grid%waer3, WAER999=grid%waer4 & ! jcb
+          &        ,TAUAERlw1  =grid%tauaerlw1,  TAUAERlw2=grid%tauaerlw2    & 
+          &        ,TAUAERlw3  =grid%tauaerlw3,  TAUAERlw4=grid%tauaerlw4    & 
+          &        ,TAUAERlw5  =grid%tauaerlw5,  TAUAERlw6=grid%tauaerlw6    & 
+          &        ,TAUAERlw7  =grid%tauaerlw7,  TAUAERlw8=grid%tauaerlw8    & 
+          &        ,TAUAERlw9  =grid%tauaerlw9,  TAUAERlw10=grid%tauaerlw10    & 
+          &        ,TAUAERlw11 =grid%tauaerlw11, TAUAERlw12=grid%tauaerlw12    & 
+          &        ,TAUAERlw13 =grid%tauaerlw13, TAUAERlw14=grid%tauaerlw14    & 
+          &        ,TAUAERlw15 =grid%tauaerlw15, TAUAERlw16=grid%tauaerlw16   & 
+          &        ,progn=config_flags%progn                                            &
 #endif
-     &         ,slope_rad=config_flags%slope_rad,topo_shading=config_flags%topo_shading     &
-     &         ,shadowmask=grid%shadowmask,ht=grid%ht,dx=grid%dx,dy=grid%dy &           
-     &         ,diffuse_frac=grid%diffuse_frac &           
-     &         ,IS_CAMMGMP_USED = grid%is_CAMMGMP_used    &
-     &         ,MP_PHYSICS=CONFIG_FLAGS%MP_PHYSICS        &
-     &         ,EFCG=grid%EFCG,EFCS=grid%EFCS,EFIG=grid%EFIG &
-     &         ,EFIS=grid%EFIS,EFSG=grid%EFSG,aercu_opt=config_flags%aercu_opt & 
-     &         ,EFSS=grid%EFSS,QS_CU=grid%QS_CU)
+          &         ,slope_rad=config_flags%slope_rad,topo_shading=config_flags%topo_shading     &
+          &         ,shadowmask=grid%shadowmask,ht=grid%ht,dx=grid%dx,dy=grid%dy &           
+          &         ,diffuse_frac=grid%diffuse_frac &           
+          &         ,IS_CAMMGMP_USED = grid%is_CAMMGMP_used    &
+          &         ,MP_PHYSICS=CONFIG_FLAGS%MP_PHYSICS        &
+          &         ,EFCG=grid%EFCG,EFCS=grid%EFCS,EFIG=grid%EFIG &
+          &         ,EFIS=grid%EFIS,EFSG=grid%EFSG,aercu_opt=config_flags%aercu_opt & 
+          &         ,EFSS=grid%EFSS,QS_CU=grid%QS_CU)
 
-BENCH_END(rad_driver_tim)
+
+        BENCH_END(rad_driver_tim)
+
+    endif
+!**********************************************************************************!
+
+!******************** YLH prescribe radiative cooling profile ********************!
+
+      if (config_flags%ideal_fix_rad_flag .eq. 1) then
+
+          CALL wrf_debug ( 50 , ' CALL IDEAL fixed radiative cooling profile ' )
+
+
+          do ij = 1 , grid%num_tiles
+            its = grid%i_start(ij)
+            ite = grid%i_end(ij)
+            jts = grid%j_start(ij)
+            jte = grid%j_end(ij)
+          enddo
+
+          DO j=jts,min(jte, jde-1)
+          DO k=k_start,min(k_end,kde-1)
+          DO i=its,min(ite, ide-1)
+
+             if (grid%p_hyd(i,k,j) .ge. 20000) then             
+                 t_tend = -1.5/86400
+             else if (grid%p_hyd(i,k,j) .le. 10000) then
+                 t_tend = 0.0
+             else 
+                 t_tend = -((1.5*grid%p_hyd(i,k,j)/10000 - 1.5) / 86400)   
+             endif
+
+             grid%rthraten(i,k,j)=t_tend/pi_phy(i,k,j) ! convert from temp tend to theta tend
+
+          ENDDO
+          ENDDO
+          ENDDO
+
+      !call wrf_debug( 50, "YLH rk scheme rad profile: p rthraten")
+
+      !do k = k_start,min(k_end,kde-1)
+
+      !     ! print out value 
+
+      !     write(message, *) &
+      !     k,grid%p_hyd(1,k,1),grid%rthraten(1,k,1)
+      !     call wrf_debug(50, message)
+
+      !enddo
+
+      endif
+
+!**********************************************************************************!
 
 !********* Surface driver
 ! surface
@@ -446,6 +519,8 @@ BENCH_START(surf_driver_tim)
       endif
 
       CALL surface_driver(                                                &
+     &        ideal_evap_flag=config_flags%ideal_evap_flag, & ! YLH
+     &        surface_wind=config_flags%surface_wind,       & ! YLH     
      &        HYDRO_dt=HYDRO_dt,  sfcheadrt=grid%sfcheadrt,               &
      &        INFXSRT=grid%INFXSRT,  soldrain=grid%soldrain,              &
      &         ACGRDFLX=grid%acgrdflx  ,ACHFX=grid%achfx        ,ACLHF=grid%aclhf        &
@@ -1076,7 +1151,7 @@ BENCH_END(fire_driver_tim)
 
 ! cumulus para.
 
-      CALL wrf_debug ( 200 , ' call cumulus_driver' )
+      CALL wrf_debug ( 50 , ' call cumulus_driver' )
 
 #if ( WRF_DFI_RADAR == 1 )
       do_capsupress=0
@@ -1085,10 +1160,14 @@ BENCH_END(fire_driver_tim)
 #endif
 
 BENCH_START(cu_driver_tim)
+
+
+   
       CALL cumulus_driver(grid                                             &
                  ! Prognostic variables
      &             ,U=grid%u_phy   ,V=grid%v_phy   ,TH=th_phy  ,T=grid%t_phy                  &
      &             ,W=grid%w_2     ,P=grid%p_hyd   ,PI=pi_phy  ,RHO=grid%rho             &
+                 !  ,FOO=grid%foo                                                      &
                  ! Other arguments
      &             ,ITIMESTEP=grid%itimestep ,DT=grid%dt      ,DX=grid%dx              &
      &             ,CUDT=grid%cudt,CURR_SECS=curr_secs,ADAPT_STEP_FLAG=adapt_step_flag &
@@ -1243,6 +1322,9 @@ BENCH_START(cu_driver_tim)
                    ,JULDAY=grid%julday, JULIAN=grid%julian                              &
                    ,aerovar=grid%aerovar,EFCS=grid%EFCS,EFIS=grid%EFIS,EFSS=grid%EFSS)
 BENCH_END(cu_driver_tim)
+
+
+
 !
 ! this for calculating (G3 scheme only)  time averaged variables for online (WRF-CHem) or offline (other models) chem runs
 !
@@ -1265,6 +1347,7 @@ BENCH_END(cu_driver_tim)
       ENDDO
       !$OMP END PARALLEL DO
      endif
+
 
 ! shallow cumulus parameterization
       CALL wrf_debug ( 200 , ' call shallow_cumulus_driver' )
@@ -1351,90 +1434,101 @@ BENCH_START(shcu_driver_tim)
 #endif
 BENCH_END(shcu_driver_tim)
 
-! JPH call force_scm to update bl tendencies
-      CALL force_scm(itimestep=grid%itimestep,dt=grid%dt                  &
-     &             ,scm_force=config_flags%scm_force                      &
-     &             ,dx=config_flags%scm_force_dx                          &
-     &             ,num_force_layers=grid%num_force_layers                &
-     &             ,scm_th_adv=config_flags%scm_th_adv                    &
-     &             ,scm_qv_adv=config_flags%scm_qv_adv                    &
-     &             ,scm_ql_adv=config_flags%scm_ql_adv                    &
-     &             ,scm_wind_adv=config_flags%scm_wind_adv                &
-     &             ,scm_vert_adv=config_flags%scm_vert_adv                &
-     &             ,scm_th_t_tend=config_flags%scm_th_t_tend              &
-     &             ,scm_qv_t_tend=config_flags%scm_qv_t_tend              &
-     &             ,scm_soilT_force=config_flags%scm_soilT_force          &
-     &             ,scm_soilQ_force=config_flags%scm_soilQ_force          &
-     &      ,scm_force_th_largescale=config_flags%scm_force_th_largescale &
-     &      ,scm_force_qv_largescale=config_flags%scm_force_qv_largescale &
-     &      ,scm_force_ql_largescale=config_flags%scm_force_ql_largescale &
-     &      ,scm_force_wind_largescale=config_flags%scm_force_wind_largescale &
-     &             ,u_base=grid%u_base,v_base=grid%v_base                 &
-     &             ,z_base=grid%z_base                                    &
-     &             ,z_force=grid%z_force,z_force_tend=grid%z_force_tend   &
-     &             ,u_g=grid%u_g,v_g=grid%v_g                             &
-     &             ,u_g_tend=grid%u_g_tend,v_g_tend=grid%v_g_tend         &
-     &             ,w_subs=grid%w_subs, w_subs_tend=grid%w_subs_tend      &
-     &             ,th_upstream_x=grid%th_upstream_x                      &
-     &             ,th_upstream_x_tend=grid%th_upstream_x_tend            &
-     &             ,th_upstream_y=grid%th_upstream_y                      &
-     &             ,th_upstream_y_tend=grid%th_upstream_y_tend            &
-     &             ,qv_upstream_x=grid%qv_upstream_x                      &
-     &             ,qv_upstream_x_tend=grid%qv_upstream_x_tend            &
-     &             ,qv_upstream_y=grid%qv_upstream_y                      &
-     &             ,qv_upstream_y_tend=grid%qv_upstream_y_tend            &
-     &             ,ql_upstream_x=grid%ql_upstream_x                      &
-     &             ,ql_upstream_x_tend=grid%ql_upstream_x_tend            &
-     &             ,ql_upstream_y=grid%ql_upstream_y                      &
-     &             ,ql_upstream_y_tend=grid%ql_upstream_y_tend            &
-     &             ,u_upstream_x=grid%u_upstream_x                        &
-     &             ,u_upstream_x_tend=grid%u_upstream_x_tend              &
-     &             ,u_upstream_y=grid%u_upstream_y                        &
-     &             ,u_upstream_y_tend=grid%u_upstream_y_tend              &
-     &             ,v_upstream_x=grid%v_upstream_x                        &
-     &             ,v_upstream_x_tend=grid%v_upstream_x_tend              &
-     &             ,v_upstream_y=grid%v_upstream_y                        &
-     &             ,v_upstream_y_tend=grid%v_upstream_y_tend              &
-     &             ,th_t_tend=grid%th_t_tend                              &
-     &             ,qv_t_tend=grid%qv_t_tend                              &
-     &             ,tau_x=grid%tau_x                                      &
-     &             ,tau_x_tend=grid%tau_x_tend                            &
-     &             ,tau_y=grid%tau_y                                      &
-     &             ,tau_y_tend=grid%tau_y_tend                            &
-     &             ,th_largescale=grid%th_largescale                      &
-     &             ,th_largescale_tend=grid%th_largescale_tend            &
-     &             ,qv_largescale=grid%qv_largescale                      &
-     &             ,qv_largescale_tend=grid%qv_largescale_tend            &
-     &             ,ql_largescale=grid%ql_largescale                      &
-     &             ,ql_largescale_tend=grid%ql_largescale_tend            &
-     &             ,u_largescale=grid%u_largescale                      &
-     &             ,u_largescale_tend=grid%u_largescale_tend            &
-     &             ,v_largescale=grid%v_largescale                      &
-     &             ,v_largescale_tend=grid%v_largescale_tend            &
-     &             ,tau_largescale=grid%tau_largescale                    &
-     &             ,tau_largescale_tend=grid%tau_largescale_tend          &
-     &             ,num_force_soil_layers=config_flags%num_force_soil_layers &
-     &             ,num_soil_layers=config_flags%num_soil_layers          &
-     &             ,soil_depth_force=grid%soil_depth_force                &
-     &             ,zs=grid%zs                                            &
-     &             ,tslb=grid%tslb,smois=grid%smois                       &
-     &             ,t_soil_forcing_val=grid%t_soil_forcing_val            &
-     &             ,t_soil_forcing_tend=grid%t_soil_forcing_tend          &
-     &             ,q_soil_forcing_val=grid%q_soil_forcing_val            &
-     &             ,q_soil_forcing_tend=grid%q_soil_forcing_tend          &
-     &             ,tau_soil=grid%tau_soil                                &
-     &             ,z=grid%z,z_at_w=grid%z_at_w                           &
-     &             ,th=th_phy, qv=moist(ims,kms,jms,P_QV)                 &
-     &             ,ql=moist(ims,kms,jms,P_QC)                            &
-     &             ,u=grid%u_phy, v=grid%v_phy                                      &
-     &             ,thten=grid%rthblten, qvten=grid%rqvblten              &
-     &             ,qlten=grid%rqcblten                                   &
-     &             ,uten=grid%rublten, vten=grid%rvblten                  &
-     &             ,IDS=ids,IDE=ide, JDS=jds,JDE=jde, KDS=kds,KDE=kde     &
-     &             ,IMS=ims,IME=ime, JMS=jms,JME=jme, KMS=kms,KME=kme     &
-     &             ,IPS=ips,IPE=ipe, JPS=jps,JPE=jpe, KPS=kps,KPE=kpe     &
-     &             ,KTS=k_start, KTE=min(k_end,kde-1)                     &
+
+
+! YLH Linear Response Function
+
+
+
+      do ij = 1 , grid%num_tiles
+        its = grid%i_start(ij)
+        ite = grid%i_end(ij)
+        jts = grid%j_start(ij)
+        jte = grid%j_end(ij)
+      enddo
+
+      !call wrf_debug( 50, "YLH before force_scm rthblten")
+
+      !do k = k_start,min(k_end,kde-1)
+
+      !   !print out value 
+
+      !   write(message, *) &
+      !   k,grid%rthblten(1,k,1)
+      !   call wrf_debug(50, message)
+
+      !enddo
+
+
+
+      CALL force_scm_LRF(scm_force=config_flags%scm_force                 &
+     &             ,perturb_t=config_flags%perturb_t                      &
+     &             ,perturb_q=config_flags%perturb_q                      &
+     &             ,j_pert=config_flags%j_pert                            &
+     &             ,TtendAmp=config_flags%TtendAmp                        &
+     &             ,QtendAmp=config_flags%QtendAmp                        &
+     &             ,p=grid%p_hyd                                          &
+     &             ,pi=pi_phy                                             &
+     &             ,thten=grid%rthblten                                   &
+     &             ,qvten=grid%rqvblten                                   &
+     &             ,ids=ids,ide=ide, jds=jds,jde=jde, kds=kds,kde=kde     &
+     &             ,ims=ims,ime=ime, jms=jms,jme=jme, kms=kms,kme=kme     &
+     &             ,ips=ips,ipe=ipe, jps=jps,jpe=jpe, kps=kps,kpe=kpe     &
+     &             ,its=its,ite=min(ite, ide-1)                           &
+     &             ,jts=jts,jte=min(jte, jde-1)                           &
+     &             ,kts=k_start, kte=min(k_end,kde-1)                     &
      &              )
+
+
+
+      !call wrf_debug( 50, "YLH after force_scm rthblten")
+
+      !do k = k_start,min(k_end,kde-1)
+
+      !   !print out value     
+
+      !   write(message, *) &
+      !   k,grid%rthblten(1,k,1)
+      !   call wrf_debug(50, message)
+
+      !enddo
+
+     ! YLH (LRF) force surface winds
+
+      CALL force_scm_surface_winds(force_surface_winds=config_flags%force_surface_winds   &
+     &                             ,u=grid%u_phy, v=grid%v_phy                            &
+     &                             ,ims=ims,ime=ime, jms=jms,jme=jme, kms=kms,kme=kme     &
+     &                             ,its=its,ite=min(ite, ide-1)                           &
+     &                             ,jts=jts,jte=min(jte, jde-1)                           &
+     &                             ,kts=k_start,kte=min(k_end, kde-1)                     &
+     &                            )  
+
+
+     ! YLH (LRF) relax U,V winds
+
+      CALL scm_relax_winds(relax_uv=config_flags%relax_uv, tau_relax=config_flags%tau_relax              &
+     &                             ,u_target=config_flags%u_target, v_target=config_flags%v_target       & 
+     &                             ,uten=grid%rublten, vten=grid%rvblten                                 &
+     &                             ,u=grid%u_phy, v=grid%v_phy                                           &
+     &                             ,ims=ims,ime=ime, jms=jms,jme=jme, kms=kms,kme=kme                    &
+     &                             ,its=its,ite=min(ite, ide-1)                                          &
+     &                             ,jts=jts,jte=min(jte, jde-1)                                          &
+     &                             ,kts=k_start, kte=min(k_end,kde-1)                                    &
+     &                        )
+
+
+     ! YLH (LRF) relax U,V winds with wind shear
+
+      CALL scm_relax_winds_shear(relax_uv_shear=config_flags%relax_uv_shear                              & 
+     &                             ,tau_relax_shear=config_flags%tau_relax_shear                         &
+     &                             ,uten=grid%rublten, vten=grid%rvblten                                 &
+     &                             ,u=grid%u_phy, v=grid%v_phy                                           &
+     &                             ,ims=ims,ime=ime, jms=jms,jme=jme, kms=kms,kme=kme                    &
+     &                             ,its=its,ite=min(ite, ide-1)                                          &
+     &                             ,jts=jts,jte=min(jte, jde-1)                                          &
+     &                             ,kts=k_start, kte=min(k_end,kde-1)                                    &
+     &                        )
+
 
 #ifdef DM_PARALLEL
 #     include "HALO_EM_FDDA_SFC.inc"
@@ -1508,6 +1602,7 @@ BENCH_START(fdda_driver_tim)
                    ,IPSY=ipsy,IPEY=ipey,JPSY=jpsy,JPEY=jpey,KPSY=kpsy,KPEY=kpey     )
 
 BENCH_END(fdda_driver_tim)
+
 
   END SUBROUTINE first_rk_step_part1
 

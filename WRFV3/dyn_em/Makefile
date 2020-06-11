@@ -26,6 +26,10 @@ MODULES =                 		\
 	module_sfs_driver.o		\
 	module_stoch.o			\
 	module_after_all_rk_steps.o	\
+        module_relax_t_qv.o             \
+        module_force_surface_winds.o    \
+        module_relax_winds.o            \
+        module_relax_winds_shear.o      \
 	$(CASE_MODULE)
 
 # possible CASE_MODULE settings

@@ -100,19 +100,23 @@ CONTAINS
    INTEGER :: nl_in
 
    INTEGER :: ii, im1, jj, jm1, loop, error, fid, lm
+   INTEGER :: icm, jcm, nxc, nyc ! YLH
    REAL    :: B1, B2, B3, B4, B5
    REAL    :: u_mean,v_mean, f0, p_surf, p_level, qvf, z_at_v, z_at_u
    REAL    :: xrad, yrad, zrad, rad, cof1, cof2
+   REAL    :: z_scale,delt ! YLH
    REAL    :: pi, rnd
 
 !  stuff from original initialization that has been dropped from the Registry 
    REAL    :: vnu, xnu, xnus, dinit0, cbh, p0_temp, t0_temp, zd
    REAL    :: qvf1, qvf2, pd_surf
+   REAL    :: theta_surf ! YLH
    INTEGER :: it
    real :: thtmp, ptmp, temp(3)
    real :: zsfc
 
    LOGICAL :: moisture_init
+   LOGICAL :: stretch_grid ! YLH
    LOGICAL :: dry_sounding
    character (len=256) :: mminlu2
 
@@ -120,7 +124,7 @@ CONTAINS
    INTEGER :: ns_input
    REAL    :: tmn_input, tsk_input
    REAL    :: zs_input(100),tslb_input(100),smois_input(100)
-   LOGICAL :: real_soil = .true.
+   LOGICAL :: real_soil = .false. ! YLH
 
    REAL    :: zrwa(200), zwa(200)
 
@@ -170,9 +174,26 @@ CONTAINS
 
    END SELECT
 
+!----------------------
+! YLH
 
+  ! pi = 2.*asin(1.0)
+  ! write(6,*) ' pi is ',pi
+
+   stretch_grid = .false.
+   delt = 1.
+!   z_scale = .50
+   z_scale = .32
    pi = 2.*asin(1.0)
    write(6,*) ' pi is ',pi
+   nxc = (ide-ids)/2
+   nyc = jde/2
+   icm = ide/2
+! lm is the half width of the land in terms of grid points
+   lm = 25
+   write(6,*) 'lm,icm-lm,icm+lm = ', lm,icm-lm,icm+lm
+
+!----------------------
 
    CALL model_to_grid_config_rec ( grid%id , model_config_rec , config_flags )
 
@@ -217,13 +238,20 @@ CONTAINS
          grid%msfvy(i,j)    = 1.
          grid%sina(i,j)     = 0.
          grid%cosa(i,j)     = 1.
-         grid%e(i,j)        = 2.0*EOMEG*cos(config_flags%scm_lat*DEGRAD)
-         grid%f(i,j)        = 2.0*EOMEG*sin(config_flags%scm_lat*DEGRAD)
-         grid%xlat(i,j)     = config_flags%scm_lat
-         grid%xlong(i,j)    = config_flags%scm_lon
-         grid%xland(i,j)     = 1.
-         grid%landmask(i,j)  = 1.
-         grid%lu_index(i,j)  = config_flags%scm_lu_index
+         !grid%e(i,j)        = 2.0*EOMEG*cos(config_flags%scm_lat*DEGRAD)
+         grid%e(i,j)        = 0. ! YLH
+         !grid%f(i,j)        = 2.0*EOMEG*sin(config_flags%scm_lat*DEGRAD)
+         !grid%f(i,j)        = 2.5e-5 ! YLH (following em_convrad)
+         grid%f(i,j)        = 0. ! YLH (following Maxime)
+         !grid%xlat(i,j)     = config_flags%scm_lat
+         !grid%xlat(i,j)     = 10. ! YLH (following em_convrad)
+         grid%xlat(i,j)     = 0.
+         !grid%xlong(i,j)    = config_flags%scm_lon
+         grid%xlong(i,j)     = 0. ! YLH
+         grid%xland(i,j)     = 2. ! YLH
+         grid%landmask(i,j)  = 0. ! 1 = land; 0 = water ! YLH
+         !grid%lu_index(i,j)  = config_flags%scm_lu_index
+         grid%lu_index(i,j)  = 16 ! see LANDUSE.TBL, 16 is water surface ! YLH
       END DO
    END DO
 
@@ -238,10 +266,14 @@ CONTAINS
 ! JPH free of snow and ice, and only valid over land
         DO j = jts , MIN(jde-1,jte)
            DO i = its , MIN(ide-1,ite)
-              grid%vegfra(i,j) = config_flags%scm_vegfra
-              grid%canwat(i,j) = config_flags%scm_canwat
-              grid%isltyp(i,j)  = config_flags%scm_isltyp
-              grid%ivgtyp(i,j)  = config_flags%scm_lu_index
+              !grid%vegfra(i,j) = config_flags%scm_vegfra
+              grid%vegfra(i,j) = 0. ! YLH
+              !grid%canwat(i,j) = config_flags%scm_canwat
+              grid%canwat(i,j) = 0. ! YLH
+              !grid%isltyp(i,j)  = config_flags%scm_isltyp
+              grid%isltyp(i,j) = 14 ! soil category, see SOILPARM.TBL, 14 is water
+              !grid%ivgtyp(i,j)  = config_flags%scm_lu_index
+              grid%ivgtyp(i,j) = 16 ! YLH
               grid%xice(i,j) = 0.
               grid%snow(i,j) = 0.
            END DO
@@ -252,53 +284,53 @@ CONTAINS
 !  END SELECT other_masked_fields
 
    grid%step_number = 0
-
-   IF ( real_soil ) THEN ! from input file
-
-      IF (config_flags%sf_surface_physics .NE. 2) WRITE (6, *)   &
-         'If using LSM option other than Noah, must edit input_soil file in test/em_scm_xy/ directory'
+!
+!   IF ( real_soil ) THEN ! from input file ! YLH (UNCOMMENTED the whole if statement)
+!
+!      IF (config_flags%sf_surface_physics .NE. 2) WRITE (6, *)   &
+!         'If using LSM option other than Noah, must edit input_soil file in test/em_scm_xy/ directory'
     
-      CALL read_soil(100,ns_input,tmn_input,tsk_input,zs_input,tslb_input,smois_input)
+!      CALL read_soil(100,ns_input,tmn_input,tsk_input,zs_input,tslb_input,smois_input)
 
-      CALL init_module_optional_input(grid,config_flags)
-      num_st_levels_input = ns_input
-      num_sm_levels_input = ns_input
-      num_sw_levels_input = ns_input
-      DO k = 1,ns_input
-         st_levels_input(k) = zs_input(k)*100.0 ! to cm
-         sm_levels_input(k) = zs_input(k)*100.0 ! to cm
-         sw_levels_input(k) = zs_input(k)*100.0 ! to cm
-         st_input(:,k+1,:) = tslb_input(k)
-         sm_input(:,k+1,:) = smois_input(k)
-         sw_input(:,k+1,:) = smois_input(k)
-      ENDDO
+!      CALL init_module_optional_input(grid,config_flags)
+!      num_st_levels_input = ns_input
+!      num_sm_levels_input = ns_input
+!      num_sw_levels_input = ns_input
+!      DO k = 1,ns_input
+!         st_levels_input(k) = zs_input(k)*100.0 ! to cm
+!         sm_levels_input(k) = zs_input(k)*100.0 ! to cm
+!         sw_levels_input(k) = zs_input(k)*100.0 ! to cm
+!         st_input(:,k+1,:) = tslb_input(k)
+!         sm_input(:,k+1,:) = smois_input(k)
+!         sw_input(:,k+1,:) = smois_input(k)
+!      ENDDO
   
-      grid%tsk = tsk_input
-      grid%sst = tsk_input
-      grid%tmn = tmn_input
+!     grid%tsk = tsk_input
+!      grid%sst = tsk_input
+!      grid%tmn = tmn_input
 
-      flag_soil_layers  = 0 ! go ahead and put skin temp in
-      flag_soil_levels  = 0 ! go ahead and put skin moisture in
-      flag_sst          = 0 ! don't modify for ocean
-      flag_tavgsfc      = 0 
-      flag_soilhgt      = 0 
+!      flag_soil_layers  = 0 ! go ahead and put skin temp in
+!      flag_soil_levels  = 0 ! go ahead and put skin moisture in
+!      flag_sst          = 0 ! don't modify for ocean
+!      flag_tavgsfc      = 0 
+!      flag_soilhgt      = 0 
 
-      CALL process_soil_real ( grid%tsk , grid%tmn , grid%tavgsfc, &
-                   grid%landmask , grid%sst , grid%ht, grid%toposoil, &
-                   st_input , sm_input , sw_input , &
-                   st_levels_input , sm_levels_input , sw_levels_input , &
-                   grid%zs , grid%dzs , grid%tslb , grid%smois , grid%sh2o , &
-                   flag_sst , flag_tavgsfc, flag_soilhgt, flag_soil_layers, flag_soil_levels,  &
-                   ids , ide , jds , jde , kds , kde , &
-                   ims , ime , jms , jme , kms , kme , &
-                   its , ite , jts , jte , kts , kte , &
-                   model_config_rec%sf_surface_physics(grid%id) , &
-                   model_config_rec%num_soil_layers , &
-                   model_config_rec%real_data_init_type , &
-                   num_st_levels_input , num_sm_levels_input , num_sw_levels_input , &
-                   num_st_levels_alloc , num_sm_levels_alloc , num_sw_levels_alloc )
+!      CALL process_soil_real ( grid%tsk , grid%tmn , grid%tavgsfc, &
+!                   grid%landmask , grid%sst , grid%ht, grid%toposoil, &
+!                  st_input , sm_input , sw_input , &
+!                   st_levels_input , sm_levels_input , sw_levels_input , &
+!                   grid%zs , grid%dzs , grid%tslb , grid%smois , grid%sh2o , &
+!                   flag_sst , flag_tavgsfc, flag_soilhgt, flag_soil_layers, flag_soil_levels,  &
+!                   ids , ide , jds , jde , kds , kde , &
+!                   ims , ime , jms , jme , kms , kme , &
+!                   its , ite , jts , jte , kts , kte , &
+!                   model_config_rec%sf_surface_physics(grid%id) , &
+!                   model_config_rec%num_soil_layers , &
+!                   model_config_rec%real_data_init_type , &
+!                   num_st_levels_input , num_sm_levels_input , num_sw_levels_input , &
+!                   num_st_levels_alloc , num_sm_levels_alloc , num_sw_levels_alloc )
 
-   ELSE ! ideal soil
+!   ELSE ! ideal soil
 ! Process the soil; note that there are some things hard-wired into share/module_soil_pre.F
       CALL process_soil_ideal(grid%xland,grid%xice,grid%vegfra,grid%snow,grid%canwat, &
                      grid%ivgtyp,grid%isltyp,grid%tslb,grid%smois, &
@@ -308,7 +340,7 @@ CONTAINS
                                    ims,ime, jms,jme, kms,kme,&
                                    its,ite, jts,jte, kts,kte )
 
-    ENDIF
+!    ENDIF
 
     DO j = jts, jte
      DO k = kts, kte
@@ -318,16 +350,36 @@ CONTAINS
      END DO
     END DO
 
+! UNCOMMENT the following to use original WA GABLS case
 ! this is adopted from Wayne Angevine's GABLS case
-    grid%znw(1) = 1.0
-    zrwa(kde) = exp((kde-1)/40.)
-    zwa(kde) = grid%ztop
-    DO k=2, kde-1
-       zrwa(k) = exp((k-1)/40.)
-       zwa(k) = (zrwa(k)-1.) * grid%ztop/(zrwa(kde)-1.)
-       grid%znw(k) = 1. - (zwa(k) / zwa(kde))
-    ENDDO
-    grid%znw(kde) = 0.
+!
+!    grid%znw(1) = 1.0
+!    zrwa(kde) = exp((kde-1)/40.)
+!    zwa(kde) = grid%ztop
+!    DO k=2, kde-1
+!       zrwa(k) = exp((k-1)/40.)
+!       zwa(k) = (zrwa(k)-1.) * grid%ztop/(zrwa(kde)-1.)
+!       grid%znw(k) = 1. - (zwa(k) / zwa(kde))
+!    ENDDO
+!    grid%znw(kde) = 0.
+
+!-------------------
+! YLH set up the grid (stretch grid version)
+
+   IF (stretch_grid) THEN ! exponential stretch for eta (nearly constant dz)
+     DO k=1, kde
+!     grid%znw(k) = (exp(-(k-1)/float(kde-1)/z_scale) - exp(-1./z_scale))/ &
+!                               (1.-exp(-1./z_scale))
+! read eta_levels from namelist (replace with commented code above if not)
+      grid%znw(k) = model_config_rec%eta_levels(k)
+     ENDDO
+   ELSE
+     DO k=1, kde
+      grid%znw(k) = 1. - float(k-1)/float(kde-1)
+     ENDDO
+   ENDIF
+
+!-------------------
 
    DO k=1, kde-1
     grid%dnw(k) = grid%znw(k+1) - grid%znw(k)
@@ -358,7 +410,9 @@ CONTAINS
 
   write(6,*) ' getting dry sounding for base state '
   dry_sounding = .true.
-  CALL get_sounding( zsfc, zk, p_in, pd_in, theta, rho, u, v, qv, dry_sounding, nl_max, nl_in )
+  ! YLH added theta_surf to get_sounding subroutine call
+  CALL get_sounding( zsfc, zk, p_in, pd_in, theta, rho, u, v, qv, dry_sounding, nl_max, nl_in, theta_surf ) 
+  
 
   write(6,*) ' returned from reading sounding, nl_in is ',nl_in
 
@@ -500,7 +554,8 @@ CONTAINS
 
   write(6,*) ' getting moist sounding for full state '
   dry_sounding = .false.
-  CALL get_sounding( zsfc, zk, p_in, pd_in, theta, rho, u, v, qv, dry_sounding, nl_max, nl_in )
+  ! YLH added theta_surf to get_sounding subroutine call
+  CALL get_sounding( zsfc, zk, p_in, pd_in, theta, rho, u, v, qv, dry_sounding, nl_max, nl_in, theta_surf )
 
   DO J = jts, min(jde-1,jte)
   DO I = its, min(ide-1,ite)
@@ -582,6 +637,44 @@ CONTAINS
 
   ENDDO
   ENDDO
+  
+!!!!!!!!!!!!!!!!!!!!!!
+! YLH Add random low-level thermal perturbation to kick off convection
+
+!  random low-level thermal perturbation to kick off convection
+  call random_seed
+  write(6,*) ' nxc, nyc for perturbation ',nxc,nyc
+  write(6,*) ' delt for perturbation ',delt
+
+  DO J = jts, min(jde-1,jte)
+    DO I = its, min(ide-1,ite)
+      DO K = 1, 10
+
+	call RANDOM_NUMBER(rnd)
+	  grid%t_1(i,k,j)=grid%t_1(i,k,j)+delt*(rnd-0.5)
+         !  grid%t_1(i,k,j)=grid%t_1(i,k,j)+delt*COS(.5*PI*RAD)**2
+           grid%t_2(i,k,j)=grid%t_1(i,k,j)
+           qvf = 1. + rvovrd*moist(i,k,j,P_QV)
+           grid%alt(i,k,j) = (r_d/p1000mb)*(grid%t_1(i,k,j)+t0)*qvf* &
+                        (((grid%p(i,k,j)+grid%pb(i,k,j))/p1000mb)**cvpm)
+           grid%al(i,k,j) = grid%alt(i,k,j) - grid%alb(i,k,j)
+      ENDDO
+
+!  rebalance hydrostatically
+
+      DO k  = 2,kte
+        grid%ph_1(i,k,j) = grid%ph_1(i,k-1,j) - (grid%dnw(k-1))*(       &
+                     (grid%mub(i,j)+grid%mu_1(i,j))*grid%al(i,k-1,j)+ &
+                      grid%mu_1(i,j)*grid%alb(i,k-1,j)  )
+                                                   
+        grid%ph_2(i,k,j) = grid%ph_1(i,k,j) 
+        grid%ph0(i,k,j) = grid%ph_1(i,k,j) + grid%phb(i,k,j)
+      ENDDO
+
+    ENDDO
+  ENDDO
+
+!!!!!!!!!!!!!!!!!!!!!
 
    write(6,*) ' grid%mu_1 from comp ', grid%mu_1(1,1)
    write(6,*) ' full state sounding from comp, ph, grid%p, grid%al, grid%t_1, qv '
@@ -702,6 +795,21 @@ CONTAINS
          END DO
       END DO
       ENDIF
+    
+  !!!!!!!!!!!!
+  ! YLH set grid%tsk,tmn and sst  as it was uncommented out
+  ! copied from convrad, line 614-619
+
+  DO J = jts, min(jde-1,jte)
+  DO I = its, min(ide-1,ite)
+         grid%tsk(i,j) = theta_surf * (p_surf/p1000mb)**rcp
+         grid%tmn(i,j) = grid%tsk(i,j)
+  ENDDO
+  ENDDO
+
+  grid%sst = 301 ! YLH set SST to 301K
+  
+  !!!!!!!!!!!!
  
   RETURN
 
@@ -735,7 +843,7 @@ CONTAINS
 !---------------------------------------------------------------------------
 
       subroutine get_sounding( zsfc, zk, p, p_dry, theta, rho, &
-                               u, v, qv, dry, nl_max, nl_in )
+                               u, v, qv, dry, nl_max, nl_in, th_surf )
       implicit none
 
       integer nl_max, nl_in
@@ -889,10 +997,11 @@ CONTAINS
       open(unit=10,file='input_sounding',form='formatted',status='old')
       rewind(10)
 
-      read(10,*) zsfc, u10, v10, t2, q2, ps
-      ps = ps/100.0
+      read(10,*) zsfc, t2, q2, u10, v10, ps ! YLH change order of reading file
+      !ps = ps/100.0 ! YLH change input sounding ps to hPa
       ts = t2
-      qvs = q2*1000
+      !qvs = q2*1000 
+      qvs = q2 ! YLH change input sounding to g/kg
 
       if(debug) then
         write(6,*) ' input sounding surface parameters '
@@ -906,9 +1015,11 @@ CONTAINS
 
       do while (.not. end_of_file)
 
-        read(10,*,end=100) h(k+1), u(k+1), v(k+1), th(k+1), qv(k+1)
+        read(10,*,end=100) h(k+1), th(k+1), qv(k+1), u(k+1), v(k+1)
+        ! YLH change order to read file 
 
-        qv(k+1) = qv(k+1)*1000.0
+        !qv(k+1) = qv(k+1)*1000.0
+        qv(k+1) = qv(k+1) ! YLH change input sounding to g/kg
         k = k+1
         if(debug) write(6,'(1x,i3,5(1x,e10.3))') k, h(k), th(k), qv(k), u(k), v(k)
         go to 110

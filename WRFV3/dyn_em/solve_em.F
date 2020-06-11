@@ -78,6 +78,8 @@ SUBROUTINE solve_em ( grid , config_flags  &
    USE module_llxy, ONLY : proj_cassini
    USE module_avgflx_em, ONLY : zero_avgflx, upd_avgflx
    USE module_cpl, ONLY : coupler_on, cpl_settime, cpl_store_input
+   USE module_relax_t_qv, ONLY: relax_strato_t_qv ! YLH(LRF)
+!   USE module_relax_winds, ONLY: scm_relax_winds ! YLH(LRF)
 
    IMPLICIT NONE
 
@@ -97,6 +99,7 @@ SUBROUTINE solve_em ( grid , config_flags  &
    INTEGER                         :: ids , ide , jds , jde , kds , kde , &
                                       ims , ime , jms , jme , kms , kme , &
                                       ips , ipe , jps , jpe , kps , kpe
+
 
    INTEGER                         :: sids , side , sjds , sjde , skds , skde , &
                                       sims , sime , sjms , sjme , skms , skme , &
@@ -178,6 +181,9 @@ SUBROUTINE solve_em ( grid , config_flags  &
    INTEGER, PARAMETER                         :: precision = 100
    INTEGER                                    :: num, den
    TYPE(WRFU_TimeInterval)                    :: dtInterval, intervaltime,restartinterval
+
+
+
 
 ! Define benchmarking timers if -DBENCH is compiled
 #include "bench_solve_em_def.h"
@@ -673,6 +679,7 @@ BENCH_START(set_phys_bc_tim)
                               grid%j_start(ij), grid%j_end(ij),        &
                               k_start, k_end                )
 
+
        IF (config_flags%polar) THEN 
 
 !-------------------------------------------------------
@@ -789,6 +796,64 @@ BENCH_START(calc_p_rho_tim)
                              , k_start , k_end                  &
                             )
 
+
+       !+ YLH(LRF) relax temperature to RCE value
+       !+ based on Herman and Kuang(2013)
+
+       !call wrf_debug ( 50, 'call relax_temperature')
+
+       !do ij = 1 , grid%num_tiles
+       !   its = grid%i_start(ij)
+       !   ite = grid%i_end(ij)
+       !   jts = grid%j_start(ij)
+       !   jte = grid%j_end(ij)
+
+       !call wrf_debug ( 50, 'call relax_temperature')
+
+       !CALL relax_temperature ( grid%t_phy,grid%p_hyd,grid%dt   &
+       !                       , ims,ime,jms,jme,kms,kme         &
+       !                       , its,min(ite,ide-1)              &
+       !                       , jts,min(jte,jde-1)              &  
+       !                       , k_start,min(k_end,kde-1)        &
+       !                       )
+
+
+       !enddo
+
+       !CALL relax_temperature ( grid%t_phy,grid%p_hyd,grid%dt   &
+       !                       , ims,ime,jms,jme,kms,kme         &
+       !                       , its,min(ite,ide-1)              &
+       !                       , jts,min(jte,jde-1)              &
+       !                       , k_start,min(k_end,kde-1)        &
+       !                       )
+
+
+    ! readout values (after)
+
+      !call wrf_debug( 50,'YLH in solve_em grid%t_phy')
+
+      !!do i=ims,ime
+      !   do k=kms,kme
+      !      !do j=jms,jme
+
+      !         !write ( message, * ) &
+      !         !i,k,j
+      !         !print *, i,k,j
+      !         !print *, grid%w_2(i,k,j)
+      !         !call wrf_debug ( 200, message)
+
+      !         write ( message, * ) &
+      !         k,grid%t_phy(1,k,1)
+      !         !print *, i,k,j
+      !         !print *, grid%w_2(i,k,j)
+      !         call wrf_debug ( 50, message)
+
+      !       !enddo
+      !   enddo
+      !!enddo
+
+     
+
      END IF rk_step_is_one
 
 BENCH_START(rk_tend_tim)
@@ -847,6 +912,33 @@ BENCH_END(rk_tend_tim)
          grid%max_cfl_val = grid%max_vert_cfl
        ENDIF
      ENDIF
+
+
+!******************************** APPLY WIND RELAXATION (YLH) ***********************************!
+!
+!
+!
+!     do ij = 1 , grid%num_tiles
+!        its = grid%i_start(ij)
+!        ite = grid%i_end(ij)
+!        jts = grid%j_start(ij)
+!        jte = grid%j_end(ij)
+!
+!
+!     call scm_relax_winds( config_flags%relax_uv, config_flags%relax_w, config_flags%tau_relax, &
+!                           grid%ru_tend, grid%rv_tend, rw_tend,                                 &
+!                           grid%u_2, grid%v_2, grid%w_2,                                        &
+!                           grid%muu, grid%muv, grid%mut,                                        &
+!                           ims,ime,jms,jme,kms,kme,                                             &
+!                           its,min(ite,ide-1),                                                  &
+!                           jts,min(jte,jde-1),                                                  &
+!                           k_start,min(k_end,kde-1)                                             &
+!                          )                            
+!
+!      enddo
+!
+!******************************** APPLY WIND RELAXATION (YLH) ***********************************!
+
 
 BENCH_START(relax_bdy_dry_tim)
      !$OMP PARALLEL DO   &
@@ -4535,6 +4627,42 @@ BENCH_END(bc_2d_tim)
                             ipsx, ipex, jpsx, jpex, kpsx, kpex,  &
                             imsy, imey, jmsy, jmey, kmsy, kmey,  &
                             ipsy, ipey, jpsy, jpey, kpsy, kpey   )
+
+
+       !+ YLH(LRF) relax moisture to RCE value
+       !+ based on Herman and Kuang(2013)
+
+       do ij = 1 , grid%num_tiles
+          its = grid%i_start(ij)
+          ite = grid%i_end(ij)
+          jts = grid%j_start(ij)
+          jte = grid%j_end(ij)
+
+       CALL relax_strato_t_qv ( config_flags%relax_t_qv         &
+                         , grid%t_phy,moist(ims,kms,jms,P_QV)   &
+                         , grid%p_hyd,grid%dt                   &
+                         , grid%relax_t,grid%relax_q            &
+                         , ims,ime,jms,jme,kms,kme              &
+                         , its,min(ite,ide-1)                   &
+                         , jts,min(jte,jde-1)                   &
+                         , k_start,min(k_end,kde-1)             &
+                       )
+
+
+       enddo
+
+
+      ! YLH(LRF) readout value
+
+      !call wrf_debug(50,"YLH T and QV end of solve_em ")
+
+      !do k=kms,kme
+
+      !   write(message,*) &
+      !   k,grid%t_phy(1,k,1),moist(1,k,1,P_QV)
+      !   call wrf_debug(50,message)
+
+      !enddo
 
 
 

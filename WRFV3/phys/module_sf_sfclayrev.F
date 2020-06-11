@@ -24,7 +24,8 @@ CONTAINS
                      ids,ide, jds,jde, kds,kde,                    &
                      ims,ime, jms,jme, kms,kme,                    &
                      its,ite, jts,jte, kts,kte,                    &
-                     ustm,ck,cka,cd,cda,isftcflx,iz0tlnd,scm_force_flux           )
+                     ustm,ck,cka,cd,cda,isftcflx,iz0tlnd,scm_force_flux, &
+                     ideal_evap_flag,surface_wind                   ) ! YLH
 !-------------------------------------------------------------------
       IMPLICIT NONE
 !-------------------------------------------------------------------
@@ -190,6 +191,8 @@ CONTAINS
 
       INTEGER,  OPTIONAL,  INTENT(IN )   ::     ISFTCFLX, IZ0TLND
       INTEGER,  OPTIONAL,  INTENT(IN )   ::     SCM_FORCE_FLUX
+      INTEGER, INTENT(in), OPTIONAL      ::   IDEAL_EVAP_FLAG ! YLH
+      REAL, INTENT(in), OPTIONAL         ::   surface_wind ! YLH
 ! LOCAL VARS
 
       REAL,     DIMENSION( its:ite ) ::                       U1D, &
@@ -238,6 +241,7 @@ CONTAINS
                 ,isftcflx,iz0tlnd,scm_force_flux,                               &
                 USTM(ims,j),CK(ims,j),CKA(ims,j),                  &
                 CD(ims,j),CDA(ims,j)                               &
+                ,ideal_evap_flag,surface_wind                      & ! YLH
 #endif
                                                                    )
       ENDDO
@@ -259,8 +263,9 @@ CONTAINS
                      ids,ide, jds,jde, kds,kde,                    &
                      ims,ime, jms,jme, kms,kme,                    &
                      its,ite, jts,jte, kts,kte,                    &
-                     isftcflx, iz0tlnd,scm_force_flux,                            &
-                     ustm,ck,cka,cd,cda                            )
+                     isftcflx, iz0tlnd,scm_force_flux,             &
+                     ustm,ck,cka,cd,cda,                           &             
+                     ideal_evap_flag,surface_wind                  ) ! YLH
 !-------------------------------------------------------------------
       IMPLICIT NONE
 !-------------------------------------------------------------------
@@ -337,6 +342,8 @@ CONTAINS
 
       INTEGER,  OPTIONAL,  INTENT(IN )   ::     ISFTCFLX, IZ0TLND
       INTEGER,  OPTIONAL,  INTENT(IN )   ::     SCM_FORCE_FLUX
+      INTEGER, INTENT(in), OPTIONAL ::   IDEAL_EVAP_FLAG ! YLH
+      REAL, INTENT(in), OPTIONAL    ::   surface_wind ! YLH
 
 ! LOCAL VARS
 
@@ -1024,7 +1031,30 @@ CONTAINS
      ENDIF
 
       DO 370 I=its,ite
-        QFX(I)=FLQC(I)*(QSFC(I)-QX(I))                                     
+        QFX(I)=FLQC(I)*(QSFC(I)-QX(I))
+        
+        !--- YLH ---!
+        ! constant surface fluxes as per Chua et al 2019)
+        
+        IF (IDEAL_EVAP_FLAG .EQ. 1) THEN
+
+                 !WSPD(I)=5.0
+                 !QFX(I)= 0.0069*RHOX(I)*WSPD(I)*(QSFC(I)-QX(I))
+                 QFX(I)= 0.0010*surface_wind*(QSFC(I)-QX(I))
+                 !print *, "ideal qfx", QFX(I)
+                 !drag coefficient of 1e-3, wind speed 5
+                 ! Friehe and Schmitt 1976 JPO
+!                 IF (I .EQ. 1) THEN
+                    
+!                        WRITE (outstring, FMT='(A,F11.8,F11.8,F11.8,F11.8,F11.8,F11.8)') '--- NOTE:  ideal evap2 for I=1, QFX RHOX WSPD QSFC QX', & QFX(I), & RHOX(I), & WSPD(I), & QSFC(I), & QX(I)
+!                         CALL wrf_message ( outstring )
+!                 ENDIF
+
+        ENDIF 
+        
+        !--- YLH ---!  
+        
+                                          
         QFX(I)=AMAX1(QFX(I),0.)                                            
         LH(I)=XLV*QFX(I)
   370 CONTINUE                                                                 
@@ -1044,7 +1074,29 @@ CONTAINS
         ELSEIF(XLAND(I)-1.5.LT.0.)THEN                                       
           HFX(I)=FLHC(I)*(THGB(I)-THX(I))                                
           HFX(I)=AMAX1(HFX(I),-250.)                                       
-        ENDIF                                                                  
+        ENDIF  
+        
+        !--- YLH ---!
+        ! constant surface fluxes as per Chua et al 2019)
+        
+        IF (IDEAL_EVAP_FLAG .EQ. 1) THEN
+                 !WSPD(I)=WSPDI(I)
+                 !HFX(I)= 0.0069*RHOX(I)*5.0*(TSK(I)-T1D(I))
+                 HFX(I)= CP* 0.0010*surface_wind*(TSK(I)-T1D(I))
+                 !print *, "ideal hfx", HFX(I)
+                 !drag coefficient of 1e-3, wind speed 5
+                 ! Friehe and Schmitt 1976 JPO
+                 !IF (I .EQ. 1) THEN
+                    
+                 !       WRITE (outstring, FMT='(A,F11.8,F11.5,F11.5)') '--- NOTE:  ideal evap for I=1, HFX TSK T1D', & HFX(I), & TSK(I), & T1D(I)
+                 !        CALL wrf_message ( outstring )
+                 !ENDIF
+
+        ENDIF 
+                 
+        !--- YLH ---!       
+        
+                                                                        
   400 CONTINUE                                                                 
 
   405 CONTINUE                                                                 

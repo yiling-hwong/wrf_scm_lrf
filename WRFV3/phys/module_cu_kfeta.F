@@ -2723,9 +2723,20 @@ iter:     DO NCOUNT=1,10
 !c     scaling pressure and tt table index                         
 !c***********************************************************************
 !c
-      tp=(p-plutop)*rdpr
+      tp=(p-plutop)*rdpr ! YLH
+      !tp=abs((p-plutop)*rdpr) ! YLH
       qq=tp-aint(tp)
       iptb=int(tp)+1
+
+      ! YLH (modification so that iptb does not go below 1)
+      if(iptb.le.1) then
+         iptb=1
+      
+      else if (iptb.ge.220) then
+         iptb=220 
+
+      endif
+
 
 !
 !***********************************************************************
@@ -2734,10 +2745,22 @@ iter:     DO NCOUNT=1,10
 !
 !  scaling the and tt table index                                        
       bth=(the0k(iptb+1)-the0k(iptb))*qq+the0k(iptb)
-      tth=(thes-bth)*rdthk
+      tth=(thes-bth)*rdthk ! YLH
+      !tth=abs((thes-bth)*rdthk) ! YLH
       pp   =tth-aint(tth)
       ithtb=int(tth)+1
-       IF(IPTB.GE.220 .OR. IPTB.LE.1 .OR. ITHTB.GE.250 .OR. ITHTB.LE.1)THEN
+ 
+      ! YLH (modification so that ithtb does not go below 1)
+      if(ithtb.le.1) then
+         ithtb=1
+
+      else if (ithtb.ge.250) then
+         ithtb=250
+
+      endif
+
+       !IF(IPTB.GE.220 .OR. IPTB.LE.1 .OR. ITHTB.GE.250 .OR. ITHTB.LE.1)THEN ! YLH
+       IF(IPTB.GE.220 .OR. ITHTB.GE.250)THEN  ! YLH
          write(98,*)'**** OUT OF BOUNDS *********'
 !        flush(98)
        ENDIF
@@ -3006,9 +3029,20 @@ iter:     DO NCOUNT=1,10
 !     scaling pressure and tt table index                         
 !***********************************************************************
 !
-      tp=(p-plutop)*rdpr
+      tp=(p-plutop)*rdpr ! YLH
+      !tp=abs((p-plutop)*rdpr) ! YLH
       qq=tp-aint(tp)
       iptb=int(tp)+1
+
+      ! YLH (modification so that iptb does not go below 1)
+      if(iptb.le.1) then
+         iptb=1
+
+      else if (iptb.ge.220) then
+         iptb=220
+
+      endif
+
 !
 !***********************************************************************
 !              base and scaling factor for the                           
@@ -3016,10 +3050,21 @@ iter:     DO NCOUNT=1,10
 !
 !  scaling the and tt table index                                        
       bth=(the0k(iptb+1)-the0k(iptb))*qq+the0k(iptb)
-      tth=(thes-bth)*rdthk
+      tth=(thes-bth)*rdthk ! YLH
+      !tth=abs((thes-bth)*rdthk) ! YLH
       pp   =tth-aint(tth)
       ithtb=int(tth)+1
 !
+
+      ! YLH (modification so that ithtb does not go below 1)
+      if(ithtb.le.1) then
+         ithtb=1
+
+      else if (ithtb.ge.250) then
+         ithtb=250
+
+      endif
+
       t00=ttab(ithtb  ,iptb  )
       t10=ttab(ithtb+1,iptb  )
       t01=ttab(ithtb  ,iptb+1)

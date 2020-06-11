@@ -16,3 +16,10 @@
 configure.wrf*
 *.backup
 *.f90
+*.nc
+wrfout*
+wrfrst*
+wrfxtrm*
+*.log
+compile_job*
+test/

@@ -8123,6 +8123,8 @@
 !
 ! ------------------------------------------------------------------
 
+      !USE module_common_variables_ylh, ONLY : print_all_details ! YLH
+
 ! ------- Declarations ------
 
 ! ------- Input -------
@@ -8843,6 +8845,8 @@
       use rrsw_aer, only : rsrtaua, rsrpiza, rsrasya
       use rrsw_con, only : heatfac, oneminus, pi
       use rrsw_wvn, only : wavenum1, wavenum2
+     
+      !USE module_common_variables_ylh, ONLY : print_all_details ! YLH
 
 ! ------- Declarations
 
@@ -9870,6 +9874,8 @@
 !------------------------------------------------------------------
 MODULE module_ra_rrtmg_sw
 
+use parrrsw, only : rrsw_scon ! YLH
+
 use module_model_constants, only : cp
 USE module_wrf_error
 #if (HWRF == 1)
@@ -9938,9 +9944,13 @@ CONTAINS
                        xcoszen,julian                             & ! jararias 2013/08
                                                                   )
 !------------------------------------------------------------------
+   !USE module_common_variables_ylh, ONLY : print_all_details ! YLH
+
    IMPLICIT NONE
 !------------------------------------------------------------------
+   
    LOGICAL, INTENT(IN )      ::        warm_rain
+
    LOGICAL, INTENT(IN )      ::   is_CAMMGMP_used ! Added for CAM5 RRTMG<->CAMMGMP
 !
    INTEGER, INTENT(IN )      ::        ids,ide, jds,jde, kds,kde, &
@@ -9969,7 +9979,11 @@ CONTAINS
 
    INTEGER, INTENT(IN  )     ::                           JULDAY
    REAL, INTENT(IN    )      ::                      RADT,DEGRAD, &
-                                         XTIME,DECLIN,SOLCON,GMT
+                                         XTIME,DECLIN,GMT
+
+
+! YLH change SOLCON to intent (inout) to allow it to be changed
+   REAL, INTENT(INOUT  )     ::                            SOLCON
 
    REAL, DIMENSION( ims:ime, jms:jme )                          , &
          INTENT(IN   )  ::                                  XLAT, &
@@ -10322,8 +10336,17 @@ CONTAINS
 ! Cosine solar zenith angle for current time step
 !
           ! jararias, 14/08/2013
-          coszr(i,j)=xcoszen(i,j)
-          coszrs=xcoszen(i,j)
+          ! coszr(i,j)=xcoszen(i,j) ! YLH comment out
+          !coszrs=xcoszen(i,j)
+          
+          pi = 4.*atan(1.0) ! YLH
+          coszrs = 0.8 ! YLH
+          coszr(i,j) = coszrs ! YLH
+          solcon = rrsw_scon * 1.0 / (pi*0.8) ! YLH
+          !if ( print_all_details .eqv. .TRUE. ) then
+          !   print *, "SOLCON in RRTMG_SWRAD is overwritten to", solcon
+          !endif
+
 
 ! Set flag to prevent shortwave calculation when sun below horizon
          if (coszrs.le.0.0) dorrsw = .false.

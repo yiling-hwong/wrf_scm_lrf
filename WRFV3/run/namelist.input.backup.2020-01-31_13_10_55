@@ -1,5 +1,5 @@
  &time_control
- run_days                            = 1000,
+ run_days                            = 20,
  run_hours                           = 0,
  run_minutes                         = 0,
  run_seconds                         = 0,
@@ -115,7 +115,6 @@
  bl_pbl_physics                      = 2,
  bldt                                = 0,
  cu_physics                          = 7,
- shcu_physics                        = 2,
  cudt                                = 5,
  num_soil_layers                     = 5,
  /

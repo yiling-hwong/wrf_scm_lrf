@@ -4,7 +4,8 @@ MODULE module_surface_driver
 CONTAINS
 
    SUBROUTINE surface_driver(                                         &
-     &           HYDRO_dt,sfcheadrt,INFXSRT,soldrain,                 &
+     &           ideal_evap_flag,surface_wind                         & ! YLH
+     &          ,HYDRO_dt,sfcheadrt,INFXSRT,soldrain,                 &
      &           acgrdflx,achfx,aclhf                                 &
      &          ,acsnom,acsnow,snowfallac,akhs,akms,albedo,br,canwat  &
      &          ,chklowq,dt,dx,dz8w,dzs,glw                           &
@@ -368,6 +369,7 @@ CONTAINS
    USE module_sf_tmnupdate
    USE module_sf_lake
    USE module_cpl, ONLY : coupler_on, cpl_rcv
+
 !
 !  This driver calls subroutines for the surface parameterizations.
 !
@@ -972,6 +974,8 @@ CONTAINS
    REAL   , OPTIONAL, INTENT(IN )::   OML_HML0
    REAL   , OPTIONAL, INTENT(IN )::   OML_GAMMA
    REAL   , OPTIONAL, INTENT(IN )::   OML_RELAXATION_TIME
+   INTEGER, INTENT(in), OPTIONAL ::   IDEAL_EVAP_FLAG ! YLH
+   REAL, INTENT(in), OPTIONAL         ::   surface_wind ! YLH
 !
 !  Observation nudging
 !
@@ -1895,7 +1899,8 @@ CONTAINS
                  ims,ime, jms,jme, kms,kme,                          &
                  i_start(ij),i_end(ij), j_start(ij),j_end(ij), kts,kte,    &
                  ustm,ck,cka,cd,cda,isftcflx,iz0tlnd,                &
-                 sf_surface_physics  )
+                 sf_surface_physics                                 )
+
          ELSE
          CALL SFCLAY(u_phytmp,v_phytmp,t_phy,qv_curr,              &
                p_phy,dz8w,cp,g,rcp,r_d,xlv,psfc,chs,chs2,cqs2,cpm, &
@@ -1908,7 +1913,8 @@ CONTAINS
                ids,ide, jds,jde, kds,kde,                          &
                ims,ime, jms,jme, kms,kme,                          &
                i_start(ij),i_end(ij), j_start(ij),j_end(ij), kts,kte,    &
-               ustm,ck,cka,cd,cda,isftcflx,iz0tlnd,scm_force_flux  )
+               ustm,ck,cka,cd,cda,isftcflx,iz0tlnd,scm_force_flux   )
+
 #if ( EM_CORE==1)
            DO j = j_start(ij),j_end(ij)
            DO i = i_start(ij),i_end(ij)
@@ -1947,7 +1953,9 @@ CONTAINS
                  ims,ime, jms,jme, kms,kme,                          &
                  i_start(ij),i_end(ij), j_start(ij),j_end(ij), kts,kte,    &
                  ustm,ck,cka,cd,cda,isftcflx,iz0tlnd,                &
-                 sf_surface_physics  )
+                 sf_surface_physics,                                 &
+                 scm_force_flux,     & ! YLH
+                 ideal_evap_flag,surface_wind                        ) ! YLH
          ELSE
          CALL SFCLAYREV(u_phytmp,v_phytmp,t_phy,qv_curr,&
                p_phy,dz8w,cp,g,rcp,r_d,xlv,psfc,chs,chs2,cqs2,cpm, &
@@ -1960,7 +1968,8 @@ CONTAINS
                ids,ide, jds,jde, kds,kde,                          &
                ims,ime, jms,jme, kms,kme,                          &
                i_start(ij),i_end(ij), j_start(ij),j_end(ij), kts,kte,    &
-               ustm,ck,cka,cd,cda,isftcflx,iz0tlnd, scm_force_flux    )
+               ustm,ck,cka,cd,cda,isftcflx,iz0tlnd, scm_force_flux, &
+               ideal_evap_flag,surface_wind                         ) ! YLH
 #if ( EM_CORE==1)
            DO j = j_start(ij),j_end(ij)
            DO i = i_start(ij),i_end(ij)
@@ -2041,7 +2050,7 @@ CONTAINS
                 p1000mb,                                             &
                 ids,ide, jds,jde, kds,kde,                           &
                 ims,ime, jms,jme, kms,kme,                           &
-                i_start(ij),i_end(ij), j_start(ij),j_end(ij), kts,kte    )
+                i_start(ij),i_end(ij), j_start(ij),j_end(ij), kts,kte)
         ELSE
             CALL MYJSFC(itimestep,ht,dz8w,                         &
               p_phy,p8w,th_phy,t_phy,                              &
@@ -2058,7 +2067,7 @@ CONTAINS
               p1000mb,                                             &
               ids,ide, jds,jde, kds,kde,                           &
               ims,ime, jms,jme, kms,kme,                           &
-              i_start(ij),i_end(ij), j_start(ij),j_end(ij), kts,kte    )
+              i_start(ij),i_end(ij), j_start(ij),j_end(ij), kts,kte)
 #if ( EM_CORE==1)
          DO j = j_start(ij),j_end(ij)
             DO i = i_start(ij),i_end(ij)
@@ -4104,7 +4113,7 @@ CONTAINS
         &     P1000,                                        &
         &     IDS,IDE,JDS,JDE,KDS,KDE,                        &
         &     IMS,IME,JMS,JME,KMS,KME,                        &
-        &     ITS,ITE,JTS,JTE,KTS,KTE )
+        &     ITS,ITE,JTS,JTE,KTS,KTE)
 !     USE module_model_constants
      USE module_sf_myjsfc
 
@@ -4337,7 +4346,7 @@ CONTAINS
           &        P1000,                                        &  ! I
           &        ids,ide, jds,jde, kds,kde,                      &
           &        ims,ime, jms,jme, kms,kme,                      &
-          &        its,ite, jts,jte, kts,kte    )
+          &        its,ite, jts,jte, kts,kte )
 
      ! Set up things for the open ocean call.
      DO j = JTS, JTE
@@ -4391,7 +4400,7 @@ CONTAINS
           &        p1000,                                                                    & ! I
           &        ids,ide, jds,jde, kds,kde,                                                  &
           &        ims,ime, jms,jme, kms,kme,                                                  &
-          &        its,ite, jts,jte, kts,kte    )
+          &        its,ite, jts,jte, kts,kte )
 
 !
 ! Scale the appropriate terms between open-water values and ice-covered values
@@ -5507,7 +5516,9 @@ TICE2TSK_IF2COLD,XICE_THRESHOLD,                                   &
                      ims,ime, jms,jme, kms,kme,                    &
                      its,ite, jts,jte, kts,kte,                    &
                      ustm,ck,cka,cd,cda,isftcflx,iz0tlnd,          &
-                     sf_surface_physics                             )
+                     sf_surface_physics,                           &
+                     scm_force_flux,    & ! YLH
+                     ideal_evap_flag,surface_wind                  ) ! YLH
 
      USE module_sf_sfclayrev
      implicit none
@@ -5583,6 +5594,9 @@ TICE2TSK_IF2COLD,XICE_THRESHOLD,                                   &
                INTENT(INOUT)   ::                            ustm
 
      INTEGER,  OPTIONAL,  INTENT(IN )   ::     ISFTCFLX,IZ0TLND
+     INTEGER, INTENT(in), OPTIONAL ::   IDEAL_EVAP_FLAG ! YLH
+     REAL, INTENT(in), OPTIONAL ::   surface_wind ! YLH
+     INTEGER, INTENT(in), OPTIONAL :: scm_force_flux ! YLH
 
 !--------------------------------------------------------------------
 !    New for wrapper
@@ -5754,7 +5768,8 @@ TICE2TSK_IF2COLD,XICE_THRESHOLD,                                   &
                  ids,ide, jds,jde, kds,kde,                    &
                  ims,ime, jms,jme, kms,kme,                    &
                  its,ite, jts,jte, kts,kte,                    &
-                 ustm,ck,cka,cd,cda,isftcflx,iz0tlnd           )
+                 ustm,ck,cka,cd,cda,isftcflx,iz0tlnd,scm_force_flux, &
+                 ideal_evap_flag,surface_wind           ) ! YLH
 !
 !Restore land-point values calculated by SSiB (fds 12/2010)
      IF (itimestep .gt. 1 .and. sf_surface_physics .EQ. 8) then
@@ -5844,7 +5859,8 @@ TICE2TSK_IF2COLD,XICE_THRESHOLD,                                   &
                  ids,ide, jds,jde, kds,kde,                    &
                  ims,ime, jms,jme, kms,kme,                    &
                  its,ite, jts,jte, kts,kte,                    & ! 0
-                 ustm_sea,ck_sea,cka_sea,cd_sea,cda_sea,isftcflx,iz0tlnd )
+                 ustm_sea,ck_sea,cka_sea,cd_sea,cda_sea,isftcflx,iz0tlnd, &
+                 scm_force_flux,ideal_evap_flag,surface_wind   ) ! YLH
 !
      DO j = JTS , JTE
         DO i = ITS, ITE
