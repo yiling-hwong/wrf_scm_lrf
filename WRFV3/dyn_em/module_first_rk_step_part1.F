@@ -46,7 +46,7 @@ CONTAINS
     USE module_fr_fire_driver_wrf, ONLY : fire_driver_em_step
     USE module_fddagd_driver, ONLY : fddagd_driver
     USE module_em, ONLY : init_zero_tendency
-    USE module_force_scm, ONLY: force_scm_LRF ! YLH - LRF
+    USE module_force_scm, ONLY: force_scm_LRF ! YLH
     USE module_force_surface_winds, ONLY: force_scm_surface_winds ! YLH - LRF
     USE module_relax_winds, ONLY: scm_relax_winds ! YLH - LRF
     USE module_relax_winds_shear, ONLY: scm_relax_winds_shear ! YLH - LRF
