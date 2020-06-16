@@ -1955,6 +1955,7 @@ CONTAINS
                  ustm,ck,cka,cd,cda,isftcflx,iz0tlnd,                &
                  sf_surface_physics,                                 &
                  scm_force_flux,     & ! YLH
+                 pi_phy,rho,     & ! YLH
                  ideal_evap_flag,surface_wind                        ) ! YLH
          ELSE
          CALL SFCLAYREV(u_phytmp,v_phytmp,t_phy,qv_curr,&
@@ -1969,7 +1970,7 @@ CONTAINS
                ims,ime, jms,jme, kms,kme,                          &
                i_start(ij),i_end(ij), j_start(ij),j_end(ij), kts,kte,    &
                ustm,ck,cka,cd,cda,isftcflx,iz0tlnd, scm_force_flux, &
-               ideal_evap_flag,surface_wind                         ) ! YLH
+               pi_phy,rho,ideal_evap_flag,surface_wind              ) ! YLH
 #if ( EM_CORE==1)
            DO j = j_start(ij),j_end(ij)
            DO i = i_start(ij),i_end(ij)
@@ -5518,6 +5519,7 @@ TICE2TSK_IF2COLD,XICE_THRESHOLD,                                   &
                      ustm,ck,cka,cd,cda,isftcflx,iz0tlnd,          &
                      sf_surface_physics,                           &
                      scm_force_flux,    & ! YLH
+                     pi_phy,rho,    & ! YLH
                      ideal_evap_flag,surface_wind                  ) ! YLH
 
      USE module_sf_sfclayrev
@@ -5597,6 +5599,8 @@ TICE2TSK_IF2COLD,XICE_THRESHOLD,                                   &
      INTEGER, INTENT(in), OPTIONAL ::   IDEAL_EVAP_FLAG ! YLH
      REAL, INTENT(in), OPTIONAL ::   surface_wind ! YLH
      INTEGER, INTENT(in), OPTIONAL :: scm_force_flux ! YLH
+     REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN ):: pi_phy ! YLH
+     REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN ):: rho ! YLH
 
 !--------------------------------------------------------------------
 !    New for wrapper
@@ -5769,7 +5773,7 @@ TICE2TSK_IF2COLD,XICE_THRESHOLD,                                   &
                  ims,ime, jms,jme, kms,kme,                    &
                  its,ite, jts,jte, kts,kte,                    &
                  ustm,ck,cka,cd,cda,isftcflx,iz0tlnd,scm_force_flux, &
-                 ideal_evap_flag,surface_wind           ) ! YLH
+                 pi_phy,rho,ideal_evap_flag,surface_wind        ) ! YLH
 !
 !Restore land-point values calculated by SSiB (fds 12/2010)
      IF (itimestep .gt. 1 .and. sf_surface_physics .EQ. 8) then
@@ -5860,7 +5864,7 @@ TICE2TSK_IF2COLD,XICE_THRESHOLD,                                   &
                  ims,ime, jms,jme, kms,kme,                    &
                  its,ite, jts,jte, kts,kte,                    & ! 0
                  ustm_sea,ck_sea,cka_sea,cd_sea,cda_sea,isftcflx,iz0tlnd, &
-                 scm_force_flux,ideal_evap_flag,surface_wind   ) ! YLH
+                 scm_force_flux,pi_phy,rho,ideal_evap_flag,surface_wind  ) ! YLH
 !
      DO j = JTS , JTE
         DO i = ITS, ITE

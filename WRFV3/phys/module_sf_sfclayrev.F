@@ -25,7 +25,7 @@ CONTAINS
                      ims,ime, jms,jme, kms,kme,                    &
                      its,ite, jts,jte, kts,kte,                    &
                      ustm,ck,cka,cd,cda,isftcflx,iz0tlnd,scm_force_flux, &
-                     ideal_evap_flag,surface_wind                   ) ! YLH
+                     pi_phy,rho,ideal_evap_flag,surface_wind        ) ! YLH
 !-------------------------------------------------------------------
       IMPLICIT NONE
 !-------------------------------------------------------------------
@@ -193,13 +193,17 @@ CONTAINS
       INTEGER,  OPTIONAL,  INTENT(IN )   ::     SCM_FORCE_FLUX
       INTEGER, INTENT(in), OPTIONAL      ::   IDEAL_EVAP_FLAG ! YLH
       REAL, INTENT(in), OPTIONAL         ::   surface_wind ! YLH
+      REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN ):: pi_phy ! YLH
+      REAL, DIMENSION( ims:ime, kms:kme, jms:jme ), INTENT(IN ):: rho ! YLH
 ! LOCAL VARS
 
       REAL,     DIMENSION( its:ite ) ::                       U1D, &
                                                               V1D, &
                                                              QV1D, &
                                                               P1D, &
-                                                              T1D
+                                                              T1D, &
+                                                             pi1d, & ! YLH
+                                                            rho1d    ! YLH
 
       REAL,     DIMENSION( its:ite ) ::                    dz8w1d
 
@@ -216,6 +220,8 @@ CONTAINS
            QV1D(i)=QV3D(i,1,j)
            P1D(i) =P3D(i,1,j)
            T1D(i) =T3D(i,1,j)
+           pi1d(i) = pi_phy(i,1,j) ! YLH
+           rho1d(i) = rho(i,1,j) ! YLH
         ENDDO
 
         !  Sending array starting locations of optional variables may cause
@@ -240,8 +246,9 @@ CONTAINS
 #if ( EM_CORE == 1 )
                 ,isftcflx,iz0tlnd,scm_force_flux,                               &
                 USTM(ims,j),CK(ims,j),CKA(ims,j),                  &
-                CD(ims,j),CDA(ims,j)                               &
-                ,ideal_evap_flag,surface_wind                      & ! YLH
+                CD(ims,j),CDA(ims,j),                               &
+                pi1d,rho1d,   & ! YLH
+                ideal_evap_flag,surface_wind            & ! YLH
 #endif
                                                                    )
       ENDDO
@@ -265,7 +272,7 @@ CONTAINS
                      its,ite, jts,jte, kts,kte,                    &
                      isftcflx, iz0tlnd,scm_force_flux,             &
                      ustm,ck,cka,cd,cda,                           &             
-                     ideal_evap_flag,surface_wind                  ) ! YLH
+                     pi1d,rho1d,ideal_evap_flag,surface_wind       ) ! YLH
 !-------------------------------------------------------------------
       IMPLICIT NONE
 !-------------------------------------------------------------------
@@ -344,6 +351,8 @@ CONTAINS
       INTEGER,  OPTIONAL,  INTENT(IN )   ::     SCM_FORCE_FLUX
       INTEGER, INTENT(in), OPTIONAL ::   IDEAL_EVAP_FLAG ! YLH
       REAL, INTENT(in), OPTIONAL    ::   surface_wind ! YLH
+      REAL, DIMENSION( its:ite ), INTENT(IN ):: pi1d ! YLH
+      REAL, DIMENSION( its:ite ), INTENT(IN ):: rho1d ! YLH
 
 ! LOCAL VARS
 
@@ -387,6 +396,8 @@ CONTAINS
 !     REAL    :: psih_stable_full,psim_stable_full,psih_unstable_full,psim_unstable_full
       REAL    :: zl2,zl10,z0t
       REAL,     DIMENSION( its:ite )        ::         pq,pq2,pq10
+
+      REAL    :: SST_TH ! YLH Sea surface potential temperature (theta)
 
 
 !-------------------------------------------------------------------
@@ -1040,7 +1051,7 @@ CONTAINS
 
                  !WSPD(I)=5.0
                  !QFX(I)= 0.0069*RHOX(I)*WSPD(I)*(QSFC(I)-QX(I))
-                 QFX(I)= 0.0010*surface_wind*(QSFC(I)-QX(I))
+                 QFX(I)= rho1d(I)*0.0010*surface_wind*(QSFC(I)-QX(I))
                  !print *, "ideal qfx", QFX(I)
                  !drag coefficient of 1e-3, wind speed 5
                  ! Friehe and Schmitt 1976 JPO
@@ -1080,9 +1091,17 @@ CONTAINS
         ! constant surface fluxes as per Chua et al 2019)
         
         IF (IDEAL_EVAP_FLAG .EQ. 1) THEN
+
+
+                 SST_TH=301/pi1d(I)
+                 !SST_TH = 301*(P1000mb/PSFCPA(I))**ROVCP
+
                  !WSPD(I)=WSPDI(I)
                  !HFX(I)= 0.0069*RHOX(I)*5.0*(TSK(I)-T1D(I))
-                 HFX(I)= CP* 0.0010*surface_wind*(TSK(I)-T1D(I))
+                 !HFX(I)= CP* 0.0010*surface_wind*(TSK(I)-T1D(I))
+                 !HFX(I)= rho1d(I)*CP*0.0010*surface_wind*(SST_TH-(T1D(I)/pi1d(I)))
+                 HFX(I)= rho1d(I)*CP*0.0010*surface_wind*(301-T1D(I))
+                 !HFX(I)= rho1d(I)*CP*0.0010*surface_wind*(SST_TH-(T1D(I)*(P1000mb/PSFCPA(I))**ROVCP))
                  !print *, "ideal hfx", HFX(I)
                  !drag coefficient of 1e-3, wind speed 5
                  ! Friehe and Schmitt 1976 JPO
@@ -1091,6 +1110,12 @@ CONTAINS
                  !       WRITE (outstring, FMT='(A,F11.8,F11.5,F11.5)') '--- NOTE:  ideal evap for I=1, HFX TSK T1D', & HFX(I), & TSK(I), & T1D(I)
                  !        CALL wrf_message ( outstring )
                  !ENDIF
+                 !print *, "SST_TH",SST_TH
+                 !print *, "rho",rho1d(I)
+                 !print *, "pi",pi1d(I)
+                 !print *, "T1D theta", T1D(I)/pi1d(I)
+                 !print *, "T1D theta", T1D(I)*(P1000mb/PSFCPA(I))**ROVCP
+                 !print *, "HFX", HFX(I)
 
         ENDIF 
                  
